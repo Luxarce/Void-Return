@@ -138,12 +138,12 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   speed: 22
   tumbleSpeed: 90
-  impactVFXPrefab: {fileID: 0}
+  impactVFXPrefab: {fileID: 5679419623167683409, guid: bc16f13e797a4f444aa0f7e93b4f83af, type: 3}
   impactLayers:
     serializedVersion: 2
     m_Bits: 64
-  audioSource: {fileID: 874502804589528117}
   impactClip: {fileID: 8300000, guid: 1e634334e12bd394ba31c7999f1a9a99, type: 3}
+  impactVolume: 1
 --- !u!212 &8862554239808655747
 SpriteRenderer:
   m_ObjectHideFlags: 0
