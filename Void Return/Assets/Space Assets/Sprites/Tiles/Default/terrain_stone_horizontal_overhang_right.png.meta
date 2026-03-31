@@ -160,7 +160,8 @@ TextureImporter:
     secondaryTextures: []
     spriteCustomMetadata:
       entries: []
-    nameFileIdTable: {}
+    nameFileIdTable:
+      terrain_stone_horizontal_overhang_right_0: -6848799102444365541
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

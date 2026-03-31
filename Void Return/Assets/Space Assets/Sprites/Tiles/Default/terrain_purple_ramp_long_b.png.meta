@@ -160,7 +160,8 @@ TextureImporter:
     secondaryTextures: []
     spriteCustomMetadata:
       entries: []
-    nameFileIdTable: {}
+    nameFileIdTable:
+      terrain_purple_ramp_long_b_0: 2757614277409702908
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

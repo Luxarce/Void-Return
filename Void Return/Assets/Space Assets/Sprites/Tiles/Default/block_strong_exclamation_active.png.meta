@@ -160,7 +160,8 @@ TextureImporter:
     secondaryTextures: []
     spriteCustomMetadata:
       entries: []
-    nameFileIdTable: {}
+    nameFileIdTable:
+      block_strong_exclamation_active_0: 2022601567551538356
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

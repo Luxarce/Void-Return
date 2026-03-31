@@ -160,7 +160,8 @@ TextureImporter:
     secondaryTextures: []
     spriteCustomMetadata:
       entries: []
-    nameFileIdTable: {}
+    nameFileIdTable:
+      terrain_purple_block_top_0: 4076275237651317504
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

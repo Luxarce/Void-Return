@@ -160,7 +160,8 @@ TextureImporter:
     secondaryTextures: []
     spriteCustomMetadata:
       entries: []
-    nameFileIdTable: {}
+    nameFileIdTable:
+      terrain_purple_cloud_background_0: 5024769723474847918
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

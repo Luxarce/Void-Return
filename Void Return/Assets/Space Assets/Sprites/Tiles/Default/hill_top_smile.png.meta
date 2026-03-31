@@ -160,7 +160,8 @@ TextureImporter:
     secondaryTextures: []
     spriteCustomMetadata:
       entries: []
-    nameFileIdTable: {}
+    nameFileIdTable:
+      hill_top_smile_0: -722397568148816965
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

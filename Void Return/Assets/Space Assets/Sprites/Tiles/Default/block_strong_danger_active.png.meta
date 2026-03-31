@@ -160,7 +160,8 @@ TextureImporter:
     secondaryTextures: []
     spriteCustomMetadata:
       entries: []
-    nameFileIdTable: {}
+    nameFileIdTable:
+      block_strong_danger_active_0: 2340909895057576508
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

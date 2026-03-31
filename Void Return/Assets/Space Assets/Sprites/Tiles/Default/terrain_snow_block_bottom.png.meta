@@ -160,7 +160,8 @@ TextureImporter:
     secondaryTextures: []
     spriteCustomMetadata:
       entries: []
-    nameFileIdTable: {}
+    nameFileIdTable:
+      terrain_snow_block_bottom_0: -4602902920419349860
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

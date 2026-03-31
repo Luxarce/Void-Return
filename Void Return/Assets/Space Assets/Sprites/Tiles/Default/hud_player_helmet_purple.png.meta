@@ -160,7 +160,8 @@ TextureImporter:
     secondaryTextures: []
     spriteCustomMetadata:
       entries: []
-    nameFileIdTable: {}
+    nameFileIdTable:
+      hud_player_helmet_purple_0: -4497471337347260594
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

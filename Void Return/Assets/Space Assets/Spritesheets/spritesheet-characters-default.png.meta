@@ -1260,7 +1260,52 @@ TextureImporter:
     secondaryTextures: []
     spriteCustomMetadata:
       entries: []
-    nameFileIdTable: {}
+    nameFileIdTable:
+      spritesheet-characters-default_0: -1516483184387529025
+      spritesheet-characters-default_1: 211775934898953752
+      spritesheet-characters-default_10: 6144715408443906559
+      spritesheet-characters-default_11: -144443187003585436
+      spritesheet-characters-default_12: 9105219494030230328
+      spritesheet-characters-default_13: 4938961601127884658
+      spritesheet-characters-default_14: -6981895161831041823
+      spritesheet-characters-default_15: -6475856772366320131
+      spritesheet-characters-default_16: 608529117585639455
+      spritesheet-characters-default_17: -3317945877700360556
+      spritesheet-characters-default_18: 454096079775394508
+      spritesheet-characters-default_19: 8489900903403235563
+      spritesheet-characters-default_2: -7111530666613408619
+      spritesheet-characters-default_20: -4456421153385321519
+      spritesheet-characters-default_21: -917536899050956344
+      spritesheet-characters-default_22: -1186157906941791191
+      spritesheet-characters-default_23: 8630821001075620710
+      spritesheet-characters-default_24: -3901906420951901630
+      spritesheet-characters-default_25: 4819435017176623784
+      spritesheet-characters-default_26: -2157860780944187724
+      spritesheet-characters-default_27: -6287901631135702188
+      spritesheet-characters-default_28: -2896451398360180185
+      spritesheet-characters-default_29: 6615913174781221374
+      spritesheet-characters-default_3: 8219190902827597996
+      spritesheet-characters-default_30: -6787343892209836002
+      spritesheet-characters-default_31: 73126991172687104
+      spritesheet-characters-default_32: 6298738383321826139
+      spritesheet-characters-default_33: -789098660515651329
+      spritesheet-characters-default_34: 2145364229992885617
+      spritesheet-characters-default_35: 6449934069740465998
+      spritesheet-characters-default_36: 8200315140183105393
+      spritesheet-characters-default_37: -8774799074876459727
+      spritesheet-characters-default_38: 9223084950482534279
+      spritesheet-characters-default_39: -7559621544552133252
+      spritesheet-characters-default_4: 482379126287382239
+      spritesheet-characters-default_40: 1903856657336869959
+      spritesheet-characters-default_41: 8667047086958661133
+      spritesheet-characters-default_42: -6708041380587495879
+      spritesheet-characters-default_43: 5283247947156715593
+      spritesheet-characters-default_44: -6818565991578883538
+      spritesheet-characters-default_5: 311056923896743930
+      spritesheet-characters-default_6: -4695774582046945438
+      spritesheet-characters-default_7: -4595713069385369028
+      spritesheet-characters-default_8: -5747332739284348912
+      spritesheet-characters-default_9: -2796077757022282674
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

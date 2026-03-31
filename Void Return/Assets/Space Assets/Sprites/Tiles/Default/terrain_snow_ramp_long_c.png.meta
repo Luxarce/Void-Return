@@ -160,7 +160,8 @@ TextureImporter:
     secondaryTextures: []
     spriteCustomMetadata:
       entries: []
-    nameFileIdTable: {}
+    nameFileIdTable:
+      terrain_snow_ramp_long_c_0: 769141147203698571
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

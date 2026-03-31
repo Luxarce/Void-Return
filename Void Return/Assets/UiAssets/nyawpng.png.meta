@@ -1,0 +1,263 @@
+fileFormatVersion: 2
+guid: bd0067efca3ef22419c1d3781318aa07
+TextureImporter:
+  internalIDToNameTable:
+  - first:
+      213: -8652779897967676728
+    second: nyawpng_0
+  - first:
+      213: -8611655707186915858
+    second: nyawpng_1
+  - first:
+      213: -1823513360325657808
+    second: nyawpng_2
+  - first:
+      213: 1220817671724627282
+    second: nyawpng_3
+  - first:
+      213: -2989687681839644131
+    second: nyawpng_4
+  - first:
+      213: -4213519827479791525
+    second: nyawpng_5
+  - first:
+      213: -6333139446400579817
+    second: nyawpng_6
+  - first:
+      213: 2764415248937704811
+    second: nyawpng_7
+  - first:
+      213: 7536308955309382942
+    second: nyawpng_8
+  - first:
+      213: 1807760136795931880
+    second: nyawpng_9
+  - first:
+      213: -9159290142084506443
+    second: nyawpng_10
+  - first:
+      213: 7778757491769007246
+    second: nyawpng_11
+  - first:
+      213: 8622324328037716781
+    second: nyawpng_12
+  - first:
+      213: -5991976086021771721
+    second: nyawpng_13
+  - first:
+      213: 8446858212457219837
+    second: nyawpng_14
+  - first:
+      213: 4710853851280780638
+    second: nyawpng_15
+  - first:
+      213: -6280423992468042237
+    second: nyawpng_16
+  - first:
+      213: 2522206623136744840
+    second: nyawpng_17
+  - first:
+      213: 4864064637179833854
+    second: nyawpng_18
+  externalObjects: {}
+  serializedVersion: 13
+  mipmaps:
+    mipMapMode: 0
+    enableMipMap: 0
+    sRGBTexture: 1
+    linearTexture: 0
+    fadeOut: 0
+    borderMipMap: 0
+    mipMapsPreserveCoverage: 0
+    alphaTestReferenceValue: 0.5
+    mipMapFadeDistanceStart: 1
+    mipMapFadeDistanceEnd: 3
+  bumpmap:
+    convertToNormalMap: 0
+    externalNormalMap: 0
+    heightScale: 0.25
+    normalMapFilter: 0
+    flipGreenChannel: 0
+  isReadable: 0
+  streamingMipmaps: 0
+  streamingMipmapsPriority: 0
+  vTOnly: 0
+  ignoreMipmapLimit: 0
+  grayScaleToAlpha: 0
+  generateCubemap: 6
+  cubemapConvolution: 0
+  seamlessCubemap: 0
+  textureFormat: 1
+  maxTextureSize: 2048
+  textureSettings:
+    serializedVersion: 2
+    filterMode: 0
+    aniso: 1
+    mipBias: 0
+    wrapU: 1
+    wrapV: 1
+    wrapW: 1
+  nPOTScale: 0
+  lightmap: 0
+  compressionQuality: 50
+  spriteMode: 2
+  spriteExtrude: 1
+  spriteMeshType: 1
+  alignment: 0
+  spritePivot: {x: 0.5, y: 0.5}
+  spritePixelsToUnits: 100
+  spriteBorder: {x: 0, y: 0, z: 0, w: 0}
+  spriteGenerateFallbackPhysicsShape: 1
+  alphaUsage: 1
+  alphaIsTransparency: 1
+  spriteTessellationDetail: -1
+  textureType: 8
+  textureShape: 1
+  singleChannelComponent: 0
+  flipbookRows: 1
+  flipbookColumns: 1
+  maxTextureSizeSet: 0
+  compressionQualitySet: 0
+  textureFormatSet: 0
+  ignorePngGamma: 0
+  applyGammaDecoding: 0
+  swizzle: 50462976
+  cookieLightType: 0
+  platformSettings:
+  - serializedVersion: 4
+    buildTarget: DefaultTexturePlatform
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 0
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  - serializedVersion: 4
+    buildTarget: Standalone
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  - serializedVersion: 4
+    buildTarget: WebGL
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  - serializedVersion: 4
+    buildTarget: WindowsStoreApps
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  spriteSheet:
+    serializedVersion: 2
+    sprites:
+    - serializedVersion: 2
+      name: nyawpng_0
+      rect:
+        serializedVersion: 2
+        x: 39
+        y: 1083
+        width: 3063
+        height: 475
+      alignment: 0
+      pivot: {x: 0.5, y: 0.5}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 8c2fef5f6862be780800000000000000
+      internalID: -8652779897967676728
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: nyawpng_10
+      rect:
+        serializedVersion: 2
+        x: 7
+        y: 582
+        width: 2775
+        height: 459
+      alignment: 0
+      pivot: {x: 0.5, y: 0.5}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 5bcd05ec42aa3e080800000000000000
+      internalID: -9159290142084506443
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    outline: []
+    customData: 
+    physicsShape: []
+    bones: []
+    spriteID: 4b768f948a2e39c438de21d9c008547c
+    internalID: 0
+    vertices: []
+    indices: 
+    edges: []
+    weights: []
+    secondaryTextures: []
+    spriteCustomMetadata:
+      entries: []
+    nameFileIdTable:
+      nyawpng_0: -8652779897967676728
+      nyawpng_1: -8611655707186915858
+      nyawpng_10: -9159290142084506443
+      nyawpng_11: 7778757491769007246
+      nyawpng_12: 8622324328037716781
+      nyawpng_13: -5991976086021771721
+      nyawpng_14: 8446858212457219837
+      nyawpng_15: 4710853851280780638
+      nyawpng_16: -6280423992468042237
+      nyawpng_17: 2522206623136744840
+      nyawpng_18: 4864064637179833854
+      nyawpng_2: -1823513360325657808
+      nyawpng_3: 1220817671724627282
+      nyawpng_4: -2989687681839644131
+      nyawpng_5: -4213519827479791525
+      nyawpng_6: -6333139446400579817
+      nyawpng_7: 2764415248937704811
+      nyawpng_8: 7536308955309382942
+      nyawpng_9: 1807760136795931880
+  mipmapLimitGroupName: 
+  pSDRemoveMatte: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
