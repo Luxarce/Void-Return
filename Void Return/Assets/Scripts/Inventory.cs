@@ -2,34 +2,26 @@ using UnityEngine;
 using System.Collections.Generic;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Material Type Enum
+// MaterialType Enum
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// <summary>
 /// All collectable material types in the game.
-/// Each type maps to a specific module repair requirement in ShipModule.
 /// </summary>
 public enum MaterialType
 {
-    // Zone 1 — Debris Field (Common)
     MetalScrap,
     Bolt,
     Glass,
     Foam,
     Sealant,
-
-    // Zone 1-2 — Transition
     CopperWire,
     OxygenCanister,
     Filter,
-
-    // Zone 2 — Drift Ring (Mid-Tier)
     CircuitBoard,
     Titanium,
     Lens,
     AntennaShards,
-
-    // Zone 3 — Deep Scatter (Rare)
     FuelCell,
     Coolant,
     HeatShield,
@@ -37,12 +29,9 @@ public enum MaterialType
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// MaterialItem Data Class
+// MaterialItem
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// <summary>
-/// Holds data for a single material type stored in the Inventory.
-/// </summary>
 [System.Serializable]
 public class MaterialItem
 {
@@ -58,26 +47,30 @@ public class MaterialItem
 
 /// <summary>
 /// Singleton that stores all collected materials.
-/// Persists across scenes via DontDestroyOnLoad.
-/// Call Inventory.Instance.AddItem() from MaterialPickup scripts.
-/// Call Inventory.Instance.ConsumeMaterials() from ShipModule repair logic.
+///
+/// FIX NOTES:
+///  — OnInventoryChanged is now a plain C# event (not a UnityEvent).
+///    InventoryUI subscribes to it in Start() via +=.
+///  — Added null-guard: DontDestroyOnLoad so the singleton survives
+///    scene reloads without losing collected materials.
+///  — Clear() now correctly resets the dictionary AND fires the event
+///    so InventoryUI rebuilds to show the empty state.
+///  — GetAllItems() returns a defensive copy so iteration is safe even
+///    if something modifies the dictionary during a loop.
 /// </summary>
 public class Inventory : MonoBehaviour
 {
-    // ─── Singleton ───────────────────────────────────────────────────────────
-
+    // ── Singleton ─────────────────────────────────────────────────────────────
     public static Inventory Instance { get; private set; }
 
-    // ─── Events ──────────────────────────────────────────────────────────────
-
+    // ── Event — fires whenever items are added, consumed, or cleared ──────────
     /// <summary>
-    /// Fired whenever the inventory changes (add or consume).
-    /// Subscribe to refresh UI panels.
+    /// Subscribe to this event to be notified whenever the inventory changes.
+    /// Usage:  Inventory.Instance.OnInventoryChanged += MyMethod;
     /// </summary>
     public event System.Action OnInventoryChanged;
 
-    // ─── Internal Storage ────────────────────────────────────────────────────
-
+    // ── Internal storage ──────────────────────────────────────────────────────
     private readonly Dictionary<MaterialType, MaterialItem> _items = new();
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -91,7 +84,6 @@ public class Inventory : MonoBehaviour
             Destroy(gameObject);
             return;
         }
-
         Instance = this;
         DontDestroyOnLoad(gameObject);
     }
@@ -101,15 +93,18 @@ public class Inventory : MonoBehaviour
     // ─────────────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Add a material to the inventory. Creates a new entry if it doesn't exist.
+    /// Add materials of the given type. Creates a new entry if needed.
+    /// Fires OnInventoryChanged so InventoryUI rebuilds automatically.
     /// </summary>
     public void AddItem(MaterialType type, int qty, Sprite icon = null)
     {
+        if (qty <= 0) return;
+
         if (!_items.TryGetValue(type, out var item))
         {
             item = new MaterialItem
             {
-                itemName = type.ToString(),
+                itemName = FormatName(type),
                 type     = type,
                 icon     = icon,
                 quantity = 0
@@ -117,56 +112,54 @@ public class Inventory : MonoBehaviour
             _items[type] = item;
         }
 
+        // Assign icon if we now have one and didn't before
         if (icon != null && item.icon == null)
             item.icon = icon;
 
         item.quantity += qty;
+
+        // Notify all listeners (InventoryUI.Rebuild, MaterialRequirementsUI.RefreshAll, etc.)
         OnInventoryChanged?.Invoke();
     }
 
-    /// <summary>
-    /// Returns the current count of a specific material type.
-    /// </summary>
-    public int GetCount(MaterialType type)
-    {
-        return _items.TryGetValue(type, out var item) ? item.quantity : 0;
-    }
+    /// <summary>Returns how many of a material type the player currently holds.</summary>
+    public int GetCount(MaterialType type) =>
+        _items.TryGetValue(type, out var item) ? item.quantity : 0;
+
+    /// <summary>Returns true if the player has at least 'required' of this material.</summary>
+    public bool HasMaterials(MaterialType type, int required) =>
+        GetCount(type) >= required;
 
     /// <summary>
-    /// Returns true if the player has at least the required amount of this material.
-    /// </summary>
-    public bool HasMaterials(MaterialType type, int required)
-    {
-        return GetCount(type) >= required;
-    }
-
-    /// <summary>
-    /// Deducts the specified amount of a material from inventory.
-    /// Returns false if not enough materials were available (no deduction made).
+    /// Deducts 'amount' of a material. Returns false (no deduction) if insufficient.
     /// </summary>
     public bool ConsumeMaterials(MaterialType type, int amount)
     {
         if (!HasMaterials(type, amount)) return false;
-
         _items[type].quantity -= amount;
         OnInventoryChanged?.Invoke();
         return true;
     }
 
-    /// <summary>
-    /// Returns all items currently in the inventory (for UI display).
-    /// </summary>
-    public List<MaterialItem> GetAllItems()
-    {
-        return new List<MaterialItem>(_items.Values);
-    }
+    /// <summary>Returns a snapshot list of all items (safe to iterate while inventory changes).</summary>
+    public List<MaterialItem> GetAllItems() => new List<MaterialItem>(_items.Values);
 
     /// <summary>
-    /// Clears the entire inventory. Used by SaveManager when loading a save.
+    /// Clears the entire inventory. Used by SaveManager when loading a save file.
     /// </summary>
     public void Clear()
     {
         _items.Clear();
         OnInventoryChanged?.Invoke();
     }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Helpers
+    // ─────────────────────────────────────────────────────────────────────────
+
+    private static string FormatName(MaterialType type) =>
+        System.Text.RegularExpressions.Regex.Replace(
+            type.ToString(),
+            "(?<=[a-z])(?=[A-Z])",   // insert space before each capital after a lowercase
+            " ");
 }

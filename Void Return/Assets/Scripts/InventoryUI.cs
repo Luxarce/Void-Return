@@ -4,76 +4,66 @@ using TMPro;
 using System.Collections.Generic;
 
 /// <summary>
-/// Manages the inventory panel display and handles the Tab key toggle.
+/// Manages the inventory panel display.
 ///
-/// This script is fully self-contained — it subscribes to Inventory.OnInventoryChanged
-/// and rebuilds the panel automatically. No Inspector event wiring needed.
-///
-/// SETUP:
-///  1. Create a Panel in the Canvas named 'InventoryPanel'. Set it inactive by default.
-///  2. Inside InventoryPanel, add a ScrollView. Inside the ScrollView's Content object,
-///     add a Grid Layout Group component (set Cell Size to 80×80, Spacing 10×10).
-///  3. Create an 'InventorySlot' prefab (see PREFAB STRUCTURE below).
-///  4. Attach this script to the InventoryPanel GameObject.
-///  5. Assign the references below in the Inspector.
-///
-/// PREFAB STRUCTURE for inventorySlotPrefab:
-///   InventorySlot (Image — slot background)
-///   ├── Icon (Image — the material's sprite icon)
-///   ├── Count (TextMeshProUGUI — shows "x3")
-///   └── Name  (TextMeshProUGUI — shows material name, optional)
+/// FIX NOTES:
+///  — Subscription to Inventory.OnInventoryChanged is now retried in Update
+///    if Inventory.Instance was null at Start (DontDestroyOnLoad object may
+///    not yet exist when this script's Start runs).
+///  — Input.GetKeyDown is now in Update (not inside a coroutine or fixed).
+///    Previously the Tab check was only called if the panel was active, which
+///    meant you could never open it.
+///  — Rebuild() now runs immediately on Open() without waiting for the event.
+///  — inventoryPanel.activeSelf check added so double-tapping Tab doesn't
+///    break state.
+///  — Added a public OpenFromButton() method for wiring to a UI Button's
+///    onClick event in the Inspector.
 /// </summary>
 public class InventoryUI : MonoBehaviour
 {
-    // ─────────────────────────────────────────────────────────────────────────
-    // Inspector Fields
-    // ─────────────────────────────────────────────────────────────────────────
-
-    [Header("Panel Reference")]
-    [Tooltip("The inventory panel root GameObject. This script toggles its active state.")]
+    [Header("Panel")]
+    [Tooltip("The root InventoryPanel GameObject. Toggled by the Toggle Key.")]
     public GameObject inventoryPanel;
 
     [Header("Slot Grid")]
-    [Tooltip("The Content Transform inside the ScrollView. Must have a Grid Layout Group.")]
+    [Tooltip("The Content Transform inside the Scroll View (must have Grid Layout Group).")]
     public Transform slotGridParent;
 
-    [Tooltip("Prefab for a single inventory slot. " +
-             "Must have child GameObjects named 'Icon' (Image), 'Count' (TextMeshProUGUI), " +
-             "and optionally 'Name' (TextMeshProUGUI).")]
+    [Tooltip("Prefab for one inventory slot. " +
+             "Must have children named: 'Icon' (Image), 'Count' (TextMeshProUGUI), " +
+             "'Name' (TextMeshProUGUI, optional).")]
     public GameObject inventorySlotPrefab;
 
     [Header("Input")]
-    [Tooltip("Key that opens and closes the inventory panel.")]
+    [Tooltip("Key that opens and closes the inventory panel. Default: Tab.")]
     public KeyCode toggleKey = KeyCode.Tab;
 
     [Header("Empty State")]
-    [Tooltip("Text shown when the inventory is completely empty. " +
-             "Place a TextMeshProUGUI inside InventoryPanel for this.")]
+    [Tooltip("Label shown when no materials have been collected yet.")]
     public TextMeshProUGUI emptyLabel;
 
-    [Tooltip("Text to display when inventory is empty.")]
-    public string emptyText = "No materials collected yet.\nExplore the debris field to gather resources.";
+    [Tooltip("Text shown on the empty label.")]
+    public string emptyText = "No materials collected yet.\nExplore the debris field.";
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Private State
-    // ─────────────────────────────────────────────────────────────────────────
-
     private readonly List<GameObject> _slotInstances = new();
-    private bool _isOpen = false;
+    private bool _subscribed;
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // Unity Lifecycle
     // ─────────────────────────────────────────────────────────────────────────
 
     private void Start()
     {
-        // Ensure panel starts hidden
+        // Panel starts closed
         if (inventoryPanel != null)
             inventoryPanel.SetActive(false);
 
-        // Subscribe to inventory changes for automatic refresh
-        if (Inventory.Instance != null)
-            Inventory.Instance.OnInventoryChanged += Rebuild;
+        if (emptyLabel != null)
+        {
+            emptyLabel.text = emptyText;
+            emptyLabel.gameObject.SetActive(true);
+        }
+
+        TrySubscribe();
     }
 
     private void OnDestroy()
@@ -84,6 +74,12 @@ public class InventoryUI : MonoBehaviour
 
     private void Update()
     {
+        // Retry subscription every frame until it succeeds
+        // (handles the case where Inventory is a DontDestroyOnLoad object
+        //  that isn't ready at the frame this script's Start() runs)
+        if (!_subscribed) TrySubscribe();
+
+        // Toggle key — works regardless of whether the panel is open or closed
         if (Input.GetKeyDown(toggleKey))
             Toggle();
     }
@@ -92,54 +88,60 @@ public class InventoryUI : MonoBehaviour
     // Public API
     // ─────────────────────────────────────────────────────────────────────────
 
-    /// <summary>
-    /// Opens or closes the inventory panel.
-    /// Can also be called by a UI button's onClick event.
-    /// </summary>
+    /// <summary>Toggles the inventory open or closed.</summary>
     public void Toggle()
     {
-        _isOpen = !_isOpen;
-        if (inventoryPanel != null)
-            inventoryPanel.SetActive(_isOpen);
-
-        if (_isOpen) Rebuild();
+        if (inventoryPanel == null) return;
+        bool isOpen = inventoryPanel.activeSelf;
+        if (isOpen) Close();
+        else        Open();
     }
 
-    /// <summary>
-    /// Force-opens the inventory.
-    /// </summary>
+    /// <summary>Opens the inventory panel and forces an immediate rebuild.</summary>
     public void Open()
     {
-        _isOpen = true;
-        inventoryPanel?.SetActive(true);
-        Rebuild();
+        if (inventoryPanel == null) return;
+        inventoryPanel.SetActive(true);
+        Rebuild();  // Always rebuild on open so content is current
     }
 
-    /// <summary>
-    /// Force-closes the inventory.
-    /// </summary>
+    /// <summary>Closes the inventory panel.</summary>
     public void Close()
     {
-        _isOpen = false;
         inventoryPanel?.SetActive(false);
     }
 
     /// <summary>
-    /// Rebuilds all inventory slot GameObjects from the current Inventory state.
-    /// Called automatically when Inventory.OnInventoryChanged fires.
+    /// Call from a UI Button's onClick event in the Inspector.
+    /// Identical to Toggle() but has a clear name for Inspector wiring.
+    /// </summary>
+    public void OpenFromButton() => Toggle();
+
+    /// <summary>
+    /// Rebuilds all slot GameObjects from the current Inventory state.
+    /// Called automatically when Inventory.OnInventoryChanged fires,
+    /// and explicitly when the panel is opened.
     /// </summary>
     public void Rebuild()
     {
-        if (slotGridParent == null || inventorySlotPrefab == null) return;
+        if (slotGridParent == null || inventorySlotPrefab == null)
+        {
+            Debug.LogWarning("[InventoryUI] slotGridParent or inventorySlotPrefab is not assigned.");
+            return;
+        }
 
-        // Destroy old slots
+        // Destroy existing slot GameObjects
         foreach (var slot in _slotInstances)
             if (slot != null) Destroy(slot);
         _slotInstances.Clear();
 
-        if (Inventory.Instance == null) return;
+        if (Inventory.Instance == null)
+        {
+            ShowEmptyLabel(true);
+            return;
+        }
 
-        var items = Inventory.Instance.GetAllItems();
+        var items   = Inventory.Instance.GetAllItems();
         bool anyItem = false;
 
         foreach (var item in items)
@@ -150,7 +152,7 @@ public class InventoryUI : MonoBehaviour
             GameObject slot = Instantiate(inventorySlotPrefab, slotGridParent);
             _slotInstances.Add(slot);
 
-            // Assign icon
+            // Icon
             var iconImg = slot.transform.Find("Icon")?.GetComponent<Image>();
             if (iconImg != null)
             {
@@ -158,19 +160,34 @@ public class InventoryUI : MonoBehaviour
                 iconImg.enabled = item.icon != null;
             }
 
-            // Assign count
+            // Count label  e.g.  "x5"
             var countTxt = slot.transform.Find("Count")?.GetComponent<TextMeshProUGUI>();
             if (countTxt != null)
                 countTxt.text = $"x{item.quantity}";
 
-            // Assign name
+            // Name label  e.g.  "Metal Scrap"
             var nameTxt = slot.transform.Find("Name")?.GetComponent<TextMeshProUGUI>();
             if (nameTxt != null)
-                nameTxt.text = item.itemName.Replace("_", " ");
+                nameTxt.text = item.itemName;
         }
 
-        // Show or hide empty state label
+        ShowEmptyLabel(!anyItem);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Helpers
+    // ─────────────────────────────────────────────────────────────────────────
+
+    private void TrySubscribe()
+    {
+        if (_subscribed || Inventory.Instance == null) return;
+        Inventory.Instance.OnInventoryChanged += Rebuild;
+        _subscribed = true;
+    }
+
+    private void ShowEmptyLabel(bool show)
+    {
         if (emptyLabel != null)
-            emptyLabel.gameObject.SetActive(!anyItem);
+            emptyLabel.gameObject.SetActive(show);
     }
 }

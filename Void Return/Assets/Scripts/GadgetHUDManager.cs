@@ -117,13 +117,6 @@ public class GadgetHUDManager : MonoBehaviour
         }
     }
 
-    public void SetGadgetAvailable(int index, bool available)
-    {
-        if (index < 0 || index >= _unlockedSlots.Length) return;
-        _unlockedSlots[index] = available;
-        RefreshAllSlots();
-    }
-
     /// <summary>
     /// Unlocks a gadget slot visually and allows the player to switch to it.
     /// Called by ShipRepairManager when a module is repaired.
@@ -132,6 +125,18 @@ public class GadgetHUDManager : MonoBehaviour
     {
         if (index < 0 || index >= _unlockedSlots.Length) return;
         _unlockedSlots[index] = true;
+        RefreshAllSlots();
+    }
+
+    /// <summary>
+    /// Sets a gadget slot as available (true) or locked (false).
+    /// Called by PlayerController.ApplyStartingGadgetToggles() at game start
+    /// to reflect the enableXxxAtStart debug toggle settings in the Inspector.
+    /// </summary>
+    public void SetGadgetAvailable(int index, bool available)
+    {
+        if (index < 0 || index >= _unlockedSlots.Length) return;
+        _unlockedSlots[index] = available;
         RefreshAllSlots();
     }
 
