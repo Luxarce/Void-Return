@@ -1,0 +1,1183 @@
+fileFormatVersion: 2
+guid: 639a9188e08aed847a9a929aa7596e63
+TextureImporter:
+  internalIDToNameTable:
+  - first:
+      213: -7935369625556959067
+    second: hulolpng_0
+  - first:
+      213: -3657007091510532086
+    second: hulolpng_1
+  - first:
+      213: 1075532845546539825
+    second: hulolpng_2
+  - first:
+      213: -7264439228027149935
+    second: hulolpng_3
+  - first:
+      213: -3513720496590564867
+    second: hulolpng_4
+  - first:
+      213: -4615516969392666547
+    second: hulolpng_5
+  - first:
+      213: 8946648774627954490
+    second: hulolpng_6
+  - first:
+      213: -1174329031976629098
+    second: hulolpng_7
+  - first:
+      213: -5253973358498739966
+    second: hulolpng_8
+  - first:
+      213: 47632394540428767
+    second: hulolpng_9
+  - first:
+      213: 6669615885043584596
+    second: hulolpng_10
+  - first:
+      213: -3028437959526423266
+    second: hulolpng_11
+  - first:
+      213: 3631267987064678123
+    second: hulolpng_12
+  - first:
+      213: 2281885753579883858
+    second: hulolpng_13
+  - first:
+      213: -7814114354068729432
+    second: hulolpng_14
+  - first:
+      213: -6694641730117690828
+    second: hulolpng_15
+  - first:
+      213: -7277860461082945215
+    second: hulolpng_16
+  - first:
+      213: -5363910198347267131
+    second: hulolpng_17
+  - first:
+      213: 6342751760159818858
+    second: hulolpng_18
+  - first:
+      213: 1229391193142258414
+    second: hulolpng_19
+  - first:
+      213: -5517920767466931502
+    second: hulolpng_20
+  - first:
+      213: 4330472306295180459
+    second: hulolpng_21
+  - first:
+      213: 7607821605832436562
+    second: hulolpng_22
+  - first:
+      213: -2942547033518502490
+    second: hulolpng_23
+  - first:
+      213: -4612159286637190706
+    second: hulolpng_24
+  - first:
+      213: 1880049982080275884
+    second: hulolpng_25
+  - first:
+      213: -3563668436787057209
+    second: hulolpng_26
+  - first:
+      213: 5208355226553801540
+    second: hulolpng_27
+  - first:
+      213: -7220872572018359184
+    second: hulolpng_28
+  - first:
+      213: 3823809948182581028
+    second: hulolpng_29
+  - first:
+      213: -998986324444580107
+    second: hulolpng_30
+  - first:
+      213: -7761974744700479651
+    second: hulolpng_31
+  - first:
+      213: 4764710208935947949
+    second: hulolpng_32
+  - first:
+      213: -1295881897810264873
+    second: hulolpng_33
+  - first:
+      213: -3920698825576035730
+    second: hulolpng_34
+  - first:
+      213: 1671253253926208579
+    second: hulolpng_35
+  - first:
+      213: 247308213431500016
+    second: hulolpng_36
+  - first:
+      213: -1992726304790940988
+    second: hulolpng_37
+  - first:
+      213: 8378785356487698313
+    second: hulolpng_38
+  - first:
+      213: 746462629720752343
+    second: hulolpng_39
+  externalObjects: {}
+  serializedVersion: 13
+  mipmaps:
+    mipMapMode: 0
+    enableMipMap: 0
+    sRGBTexture: 1
+    linearTexture: 0
+    fadeOut: 0
+    borderMipMap: 0
+    mipMapsPreserveCoverage: 0
+    alphaTestReferenceValue: 0.5
+    mipMapFadeDistanceStart: 1
+    mipMapFadeDistanceEnd: 3
+  bumpmap:
+    convertToNormalMap: 0
+    externalNormalMap: 0
+    heightScale: 0.25
+    normalMapFilter: 0
+    flipGreenChannel: 0
+  isReadable: 0
+  streamingMipmaps: 0
+  streamingMipmapsPriority: 0
+  vTOnly: 0
+  ignoreMipmapLimit: 0
+  grayScaleToAlpha: 0
+  generateCubemap: 6
+  cubemapConvolution: 0
+  seamlessCubemap: 0
+  textureFormat: 1
+  maxTextureSize: 2048
+  textureSettings:
+    serializedVersion: 2
+    filterMode: 0
+    aniso: 1
+    mipBias: 0
+    wrapU: 1
+    wrapV: 1
+    wrapW: 1
+  nPOTScale: 0
+  lightmap: 0
+  compressionQuality: 50
+  spriteMode: 2
+  spriteExtrude: 1
+  spriteMeshType: 1
+  alignment: 0
+  spritePivot: {x: 0.5, y: 0.5}
+  spritePixelsToUnits: 100
+  spriteBorder: {x: 0, y: 0, z: 0, w: 0}
+  spriteGenerateFallbackPhysicsShape: 1
+  alphaUsage: 1
+  alphaIsTransparency: 1
+  spriteTessellationDetail: -1
+  textureType: 8
+  textureShape: 1
+  singleChannelComponent: 0
+  flipbookRows: 1
+  flipbookColumns: 1
+  maxTextureSizeSet: 0
+  compressionQualitySet: 0
+  textureFormatSet: 0
+  ignorePngGamma: 0
+  applyGammaDecoding: 0
+  swizzle: 50462976
+  cookieLightType: 0
+  platformSettings:
+  - serializedVersion: 4
+    buildTarget: DefaultTexturePlatform
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 0
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  - serializedVersion: 4
+    buildTarget: Standalone
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  - serializedVersion: 4
+    buildTarget: WebGL
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  - serializedVersion: 4
+    buildTarget: WindowsStoreApps
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  spriteSheet:
+    serializedVersion: 2
+    sprites:
+    - serializedVersion: 2
+      name: hulolpng_0
+      rect:
+        serializedVersion: 2
+        x: 129
+        y: 3409
+        width: 662
+        height: 342
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 5a0c0437e57efd190800000000000000
+      internalID: -7935369625556959067
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: hulolpng_1
+      rect:
+        serializedVersion: 2
+        x: 859
+        y: 3419
+        width: 662
+        height: 342
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: a082e690d63bf3dc0800000000000000
+      internalID: -3657007091510532086
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: hulolpng_2
+      rect:
+        serializedVersion: 2
+        x: 1599
+        y: 3419
+        width: 662
+        height: 272
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 13b0113bc6f0dee00800000000000000
+      internalID: 1075532845546539825
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: hulolpng_3
+      rect:
+        serializedVersion: 2
+        x: 2339
+        y: 3429
+        width: 662
+        height: 342
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 1916701c2078f2b90800000000000000
+      internalID: -7264439228027149935
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: hulolpng_4
+      rect:
+        serializedVersion: 2
+        x: 3069
+        y: 3439
+        width: 662
+        height: 342
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: df1d5b823d1cc3fc0800000000000000
+      internalID: -3513720496590564867
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: hulolpng_5
+      rect:
+        serializedVersion: 2
+        x: 3809
+        y: 3439
+        width: 662
+        height: 272
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: d48009835c362ffb0800000000000000
+      internalID: -4615516969392666547
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: hulolpng_6
+      rect:
+        serializedVersion: 2
+        x: 129
+        y: 2909
+        width: 932
+        height: 342
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: a3f02edb8a1e82c70800000000000000
+      internalID: 8946648774627954490
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: hulolpng_7
+      rect:
+        serializedVersion: 2
+        x: 1169
+        y: 2909
+        width: 932
+        height: 342
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 69cca9f97f1f3bfe0800000000000000
+      internalID: -1174329031976629098
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: hulolpng_8
+      rect:
+        serializedVersion: 2
+        x: 2179
+        y: 2909
+        width: 932
+        height: 292
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 209015331132617b0800000000000000
+      internalID: -5253973358498739966
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: hulolpng_9
+      rect:
+        serializedVersion: 2
+        x: 3269
+        y: 2889
+        width: 662
+        height: 342
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: fdd2264196939a000800000000000000
+      internalID: 47632394540428767
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: hulolpng_10
+      rect:
+        serializedVersion: 2
+        x: 3999
+        y: 2889
+        width: 662
+        height: 342
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 45e43507f4c3f8c50800000000000000
+      internalID: 6669615885043584596
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: hulolpng_11
+      rect:
+        serializedVersion: 2
+        x: 4739
+        y: 2889
+        width: 662
+        height: 272
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: e156e1e98b3d8f5d0800000000000000
+      internalID: -3028437959526423266
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: hulolpng_12
+      rect:
+        serializedVersion: 2
+        x: 129
+        y: 2369
+        width: 662
+        height: 342
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: be6ec35befad46230800000000000000
+      internalID: 3631267987064678123
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: hulolpng_13
+      rect:
+        serializedVersion: 2
+        x: 859
+        y: 2369
+        width: 662
+        height: 342
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 25d4720c003eaaf10800000000000000
+      internalID: 2281885753579883858
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: hulolpng_14
+      rect:
+        serializedVersion: 2
+        x: 1599
+        y: 2369
+        width: 662
+        height: 272
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 8a1d37b5560be8390800000000000000
+      internalID: -7814114354068729432
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: hulolpng_15
+      rect:
+        serializedVersion: 2
+        x: 2339
+        y: 2369
+        width: 662
+        height: 342
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 43a14d1f0dad713a0800000000000000
+      internalID: -6694641730117690828
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: hulolpng_16
+      rect:
+        serializedVersion: 2
+        x: 3069
+        y: 2379
+        width: 662
+        height: 342
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 1495a4c6878dffa90800000000000000
+      internalID: -7277860461082945215
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: hulolpng_17
+      rect:
+        serializedVersion: 2
+        x: 3809
+        y: 2379
+        width: 662
+        height: 272
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 5c38a6408109f85b0800000000000000
+      internalID: -5363910198347267131
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: hulolpng_18
+      rect:
+        serializedVersion: 2
+        x: 119
+        y: 1889
+        width: 412
+        height: 342
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: a644fcade1bf50850800000000000000
+      internalID: 6342751760159818858
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: hulolpng_19
+      rect:
+        serializedVersion: 2
+        x: 609
+        y: 1889
+        width: 412
+        height: 342
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: eeaec3dc6ccaf0110800000000000000
+      internalID: 1229391193142258414
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: hulolpng_20
+      rect:
+        serializedVersion: 2
+        x: 1649
+        y: 1879
+        width: 412
+        height: 342
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 2daf1641c486c63b0800000000000000
+      internalID: -5517920767466931502
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: hulolpng_21
+      rect:
+        serializedVersion: 2
+        x: 2139
+        y: 1879
+        width: 412
+        height: 342
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: bac04666e9de81c30800000000000000
+      internalID: 4330472306295180459
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: hulolpng_22
+      rect:
+        serializedVersion: 2
+        x: 3169
+        y: 1889
+        width: 412
+        height: 342
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 25b2f2a4179649960800000000000000
+      internalID: 7607821605832436562
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: hulolpng_23
+      rect:
+        serializedVersion: 2
+        x: 3659
+        y: 1889
+        width: 412
+        height: 342
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 6ad00443019f927d0800000000000000
+      internalID: -2942547033518502490
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: hulolpng_24
+      rect:
+        serializedVersion: 2
+        x: 4609
+        y: 2209
+        width: 12
+        height: 22
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: ec1a878a0915effb0800000000000000
+      internalID: -4612159286637190706
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: hulolpng_25
+      rect:
+        serializedVersion: 2
+        x: 1119
+        y: 1879
+        width: 412
+        height: 302
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: ca5dfdd6f77471a10800000000000000
+      internalID: 1880049982080275884
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: hulolpng_26
+      rect:
+        serializedVersion: 2
+        x: 2649
+        y: 1869
+        width: 412
+        height: 302
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 7cd2908107e4b8ec0800000000000000
+      internalID: -3563668436787057209
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: hulolpng_27
+      rect:
+        serializedVersion: 2
+        x: 4169
+        y: 1879
+        width: 412
+        height: 302
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 44bd9c6cb7bc74840800000000000000
+      internalID: 5208355226553801540
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: hulolpng_28
+      rect:
+        serializedVersion: 2
+        x: 59
+        y: 1399
+        width: 932
+        height: 342
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 0740c7057ae4acb90800000000000000
+      internalID: -7220872572018359184
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: hulolpng_29
+      rect:
+        serializedVersion: 2
+        x: 1099
+        y: 1399
+        width: 932
+        height: 342
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 42f070273e6e01530800000000000000
+      internalID: 3823809948182581028
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: hulolpng_30
+      rect:
+        serializedVersion: 2
+        x: 2109
+        y: 1399
+        width: 932
+        height: 292
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 5f6f1041b33e222f0800000000000000
+      internalID: -998986324444580107
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: hulolpng_31
+      rect:
+        serializedVersion: 2
+        x: 3099
+        y: 1399
+        width: 662
+        height: 342
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: d57139a281de74490800000000000000
+      internalID: -7761974744700479651
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: hulolpng_32
+      rect:
+        serializedVersion: 2
+        x: 3829
+        y: 1409
+        width: 662
+        height: 342
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: daeed45c0b6af1240800000000000000
+      internalID: 4764710208935947949
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: hulolpng_33
+      rect:
+        serializedVersion: 2
+        x: 4569
+        y: 1409
+        width: 662
+        height: 272
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 7dcf822a74a140ee0800000000000000
+      internalID: -1295881897810264873
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: hulolpng_34
+      rect:
+        serializedVersion: 2
+        x: 59
+        y: 909
+        width: 932
+        height: 342
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: e6acf3ed031e699c0800000000000000
+      internalID: -3920698825576035730
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: hulolpng_35
+      rect:
+        serializedVersion: 2
+        x: 1099
+        y: 909
+        width: 932
+        height: 342
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 344ccf1dafb713710800000000000000
+      internalID: 1671253253926208579
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: hulolpng_36
+      rect:
+        serializedVersion: 2
+        x: 2109
+        y: 909
+        width: 932
+        height: 292
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 0fcfe93828d9e6300800000000000000
+      internalID: 247308213431500016
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: hulolpng_37
+      rect:
+        serializedVersion: 2
+        x: 49
+        y: 449
+        width: 932
+        height: 342
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 4c2fb54dbf96854e0800000000000000
+      internalID: -1992726304790940988
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: hulolpng_38
+      rect:
+        serializedVersion: 2
+        x: 1089
+        y: 449
+        width: 932
+        height: 342
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 987a1b693ec674470800000000000000
+      internalID: 8378785356487698313
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: hulolpng_39
+      rect:
+        serializedVersion: 2
+        x: 2099
+        y: 449
+        width: 932
+        height: 292
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 7d00c9a8ec7fb5a00800000000000000
+      internalID: 746462629720752343
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    outline: []
+    customData: 
+    physicsShape: []
+    bones: []
+    spriteID: 
+    internalID: 0
+    vertices: []
+    indices: 
+    edges: []
+    weights: []
+    secondaryTextures: []
+    spriteCustomMetadata:
+      entries: []
+    nameFileIdTable:
+      hulolpng_0: -7935369625556959067
+      hulolpng_1: -3657007091510532086
+      hulolpng_10: 6669615885043584596
+      hulolpng_11: -3028437959526423266
+      hulolpng_12: 3631267987064678123
+      hulolpng_13: 2281885753579883858
+      hulolpng_14: -7814114354068729432
+      hulolpng_15: -6694641730117690828
+      hulolpng_16: -7277860461082945215
+      hulolpng_17: -5363910198347267131
+      hulolpng_18: 6342751760159818858
+      hulolpng_19: 1229391193142258414
+      hulolpng_2: 1075532845546539825
+      hulolpng_20: -5517920767466931502
+      hulolpng_21: 4330472306295180459
+      hulolpng_22: 7607821605832436562
+      hulolpng_23: -2942547033518502490
+      hulolpng_24: -4612159286637190706
+      hulolpng_25: 1880049982080275884
+      hulolpng_26: -3563668436787057209
+      hulolpng_27: 5208355226553801540
+      hulolpng_28: -7220872572018359184
+      hulolpng_29: 3823809948182581028
+      hulolpng_3: -7264439228027149935
+      hulolpng_30: -998986324444580107
+      hulolpng_31: -7761974744700479651
+      hulolpng_32: 4764710208935947949
+      hulolpng_33: -1295881897810264873
+      hulolpng_34: -3920698825576035730
+      hulolpng_35: 1671253253926208579
+      hulolpng_36: 247308213431500016
+      hulolpng_37: -1992726304790940988
+      hulolpng_38: 8378785356487698313
+      hulolpng_39: 746462629720752343
+      hulolpng_4: -3513720496590564867
+      hulolpng_5: -4615516969392666547
+      hulolpng_6: 8946648774627954490
+      hulolpng_7: -1174329031976629098
+      hulolpng_8: -5253973358498739966
+      hulolpng_9: 47632394540428767
+  mipmapLimitGroupName: 
+  pSDRemoveMatte: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
