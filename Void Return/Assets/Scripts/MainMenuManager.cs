@@ -64,16 +64,12 @@ public class MainMenuManager : MonoBehaviour
     [Tooltip("Exact name of the game scene to load when Start is pressed.")]
     public string gameSceneName = "GameScene";
 
-
-    private SceneLoader _loader;
     // ─────────────────────────────────────────────────────────────────────────
     // Unity Lifecycle
     // ─────────────────────────────────────────────────────────────────────────
 
     private void Start()
     {
-
-        _loader = GetComponent<SceneLoader>();
         // Initial panel state
         mainMenuPanel?.SetActive(true);
         optionsPanel?.SetActive(false);
@@ -116,14 +112,14 @@ public class MainMenuManager : MonoBehaviour
 
     private void StartGame()
     {
-        _loader.LoadScene();
+        UnityEngine.SceneManagement.SceneManager.LoadScene(gameSceneName);
     }
 
     private void ContinueGame()
     {
         // Load scene then SaveManager will load data after scene is ready
         PlayerPrefs.SetInt("LoadOnStart", 1);
-        _loader.LoadScene();
+        UnityEngine.SceneManagement.SceneManager.LoadScene(gameSceneName);
     }
 
     private void OpenOptions()

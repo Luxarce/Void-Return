@@ -1,51 +1,32 @@
 using UnityEngine;
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Sound Entry Data Class
-// ─────────────────────────────────────────────────────────────────────────────
+using UnityEngine.Audio;
 
 /// <summary>
-/// A single entry in the AudioManager's sound library.
-/// Set the Id string and drag in the AudioClip in the Inspector.
-/// Call AudioManager.Instance.PlaySFX("your_id") from any script to play it.
-/// </summary>
-[System.Serializable]
-public class SoundEntry
-{
-    [Tooltip("Unique string identifier used to reference this sound in code. " +
-             "Example: 'pickup', 'boots_activate', 'meteorite_impact'.")]
-    public string id;
-
-    [Tooltip("The audio clip to play for this sound.")]
-    public AudioClip clip;
-
-    [Tooltip("Base volume for this specific sound (0 to 1). " +
-             "This is multiplied by the global SFX/music volume.")]
-    [Range(0f, 1f)]
-    public float volume = 1f;
-
-    [Tooltip("If true, this sound loops until explicitly stopped.")]
-    public bool loop = false;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// AudioManager Singleton
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// <summary>
-/// Central audio manager. Handles music playback, SFX playback by ID,
-/// ambient background sound, and volume/toggle settings.
+/// Central audio manager with AudioMixer support.
 ///
-/// Persists across scenes via DontDestroyOnLoad.
-/// Create one instance in the MainMenu scene. Do not duplicate in GameScene.
+/// CHANGES IN THIS VERSION:
+///  — Added AudioMixer reference for professional volume control.
+///  — Music and SFX volumes now route through AudioMixer exposed parameters
+///    instead of directly setting AudioSource.volume. This means the master
+///    volume slider in the options menu can duck everything at once.
+///  — SetMusicVolume / SetSFXVolume / SetMasterVolume now write to the mixer
+///    using logarithmic conversion (dB) for natural-feeling sliders.
+///  — All settings still persist via PlayerPrefs.
 ///
 /// SETUP:
-/// 1. Create an empty GameObject named 'AudioManager'.
-/// 2. Attach this script.
-/// 3. Create two child GameObjects: 'MusicSource' and 'SFXSource'.
-/// 4. Add an AudioSource component to each child.
-/// 5. Drag each AudioSource into the musicSource and sfxSource fields below.
-/// 6. Populate the musicTracks and soundEffects arrays with your clips.
+///  1. In the Project window → Assets/Audio/ → right-click → Create → Audio Mixer.
+///     Name it "GameAudioMixer".
+///  2. Double-click GameAudioMixer to open the Audio Mixer window.
+///  3. You will see a "Master" group. Click on it.
+///  4. Right-click Master → Add child group → name it "Music".
+///  5. Right-click Master → Add child group → name it "SFX".
+///  6. Select the Music group → in the Inspector on the right, right-click the
+///     Volume parameter → "Expose 'Volume' to script" → name it "MusicVolume".
+///  7. Select the SFX group → same → expose as "SFXVolume".
+///  8. Select the Master group → expose as "MasterVolume".
+///  9. Drag this AudioMixer asset into the 'gameMixer' field below.
+/// 10. On your MusicSource AudioSource: Output → select "Music" group.
+/// 11. On your SFXSource AudioSource: Output → select "SFX" group.
 /// </summary>
 public class AudioManager : MonoBehaviour
 {
@@ -59,32 +40,45 @@ public class AudioManager : MonoBehaviour
     // Inspector Fields
     // ─────────────────────────────────────────────────────────────────────────
 
+    [Header("Audio Mixer")]
+    [Tooltip("Drag your GameAudioMixer asset here (Assets/Audio/GameAudioMixer). " +
+             "See script header for full setup instructions.")]
+    public AudioMixer gameMixer;
+
+    [Tooltip("Exact name of the exposed parameter for Music volume in the mixer. " +
+             "Default: 'MusicVolume'. Must match what you exposed in the Audio Mixer window.")]
+    public string mixerParamMusic  = "MusicVolume";
+
+    [Tooltip("Exact name of the exposed parameter for SFX volume.")]
+    public string mixerParamSFX    = "SFXVolume";
+
+    [Tooltip("Exact name of the exposed parameter for Master volume.")]
+    public string mixerParamMaster = "MasterVolume";
+
     [Header("Audio Sources — Drag child AudioSource components here")]
-    [Tooltip("AudioSource used for background music and ambient loops. " +
-             "Enable 'Loop' on the component itself.")]
+    [Tooltip("AudioSource for background music. Set its Output to the 'Music' mixer group.")]
     public AudioSource musicSource;
 
-    [Tooltip("AudioSource used for sound effects (PlayOneShot calls). " +
-             "Do NOT enable Loop on this component.")]
+    [Tooltip("AudioSource for sound effects. Set its Output to the 'SFX' mixer group.")]
     public AudioSource sfxSource;
 
     [Header("Ambient Sound")]
-    [Tooltip("Clip that plays immediately on Start as the ambient space background loop. " +
-             "Leave empty if you want to trigger ambient music manually with PlayMusic().")]
+    [Tooltip("Audio clip looped as ambient background the moment the game scene loads.")]
     public AudioClip ambientClip;
 
-    [Tooltip("Volume of the ambient background loop (0 to 1).")]
+    [Tooltip("Volume of the ambient loop (0–1).")]
     [Range(0f, 1f)]
     public float ambientVolume = 0.35f;
 
     [Header("Music Tracks Library")]
-    [Tooltip("All music tracks. Give each a unique Id and assign the AudioClip. " +
-             "Call PlayMusic('your_id') to switch tracks at runtime.")]
+    [Tooltip("All music tracks. Each entry needs a unique Id string and an AudioClip. " +
+             "Call AudioManager.Instance.PlayMusic('your_id') to switch tracks.\n\n" +
+             "Suggested IDs: ambient_space, tension_zone2, danger_zone3, main_menu, victory")]
     public SoundEntry[] musicTracks;
 
     [Header("Sound Effects Library")]
-    [Tooltip("All sound effects. Give each a unique Id and assign the AudioClip. " +
-             "Call PlaySFX('your_id') to play a sound at runtime.\n\n" +
+    [Tooltip("All sound effects. Each entry needs a unique Id string and an AudioClip. " +
+             "Call AudioManager.Instance.PlaySFX('your_id') to play.\n\n" +
              "Suggested IDs:\n" +
              "pickup, canister_pickup,\n" +
              "boots_on, boots_off, boots_step,\n" +
@@ -92,18 +86,21 @@ public class AudioManager : MonoBehaviour
              "grenade_launch, grenade_detonate,\n" +
              "thruster_active, thruster_empty,\n" +
              "meteorite_impact, meteorite_incoming,\n" +
-             "rift_start, rift_disorient,\n" +
-             "repair_stage, repair_complete,\n" +
+             "rift_start, repair_stage, repair_complete,\n" +
              "oxygen_warning, oxygen_critical,\n" +
              "jump, ui_click, ui_open, ui_notification")]
     public SoundEntry[] soundEffects;
 
-    [Header("Default Volumes")]
-    [Tooltip("Starting music volume (0 to 1). Loaded from PlayerPrefs if a saved value exists.")]
+    [Header("Default Volumes (0–1)")]
+    [Tooltip("Default master volume loaded at first launch.")]
+    [Range(0f, 1f)]
+    public float defaultMasterVolume = 1f;
+
+    [Tooltip("Default music volume.")]
     [Range(0f, 1f)]
     public float defaultMusicVolume = 0.8f;
 
-    [Tooltip("Starting SFX volume (0 to 1). Loaded from PlayerPrefs if a saved value exists.")]
+    [Tooltip("Default SFX volume.")]
     [Range(0f, 1f)]
     public float defaultSFXVolume = 1f;
 
@@ -111,17 +108,19 @@ public class AudioManager : MonoBehaviour
     // Private State
     // ─────────────────────────────────────────────────────────────────────────
 
+    private float _masterVolume;
     private float _musicVolume;
     private float _sfxVolume;
     private bool  _musicEnabled = true;
     private bool  _sfxEnabled   = true;
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Public Properties (read-only, used by UI sliders)
+    // Public Properties
     // ─────────────────────────────────────────────────────────────────────────
 
-    public float MusicVolume => _musicVolume;
-    public float SFXVolume   => _sfxVolume;
+    public float MasterVolume => _masterVolume;
+    public float MusicVolume  => _musicVolume;
+    public float SFXVolume    => _sfxVolume;
 
     // ─────────────────────────────────────────────────────────────────────────
     // Unity Lifecycle
@@ -129,29 +128,23 @@ public class AudioManager : MonoBehaviour
 
     private void Awake()
     {
-        if (Instance != null && Instance != this)
-        {
-            Destroy(gameObject);
-            return;
-        }
-
+        if (Instance != null && Instance != this) { Destroy(gameObject); return; }
         Instance = this;
         DontDestroyOnLoad(gameObject);
-
         LoadSettings();
     }
 
     private void Start()
     {
-        // Apply loaded volumes to sources
-        if (musicSource != null) musicSource.volume = _musicVolume;
+        // Apply persisted volumes to the mixer on startup
+        ApplyAllVolumesToMixer();
 
-        // Start ambient background loop immediately if assigned
+        // Start ambient loop
         if (ambientClip != null && musicSource != null)
         {
             musicSource.clip   = ambientClip;
             musicSource.loop   = true;
-            musicSource.volume = ambientVolume * _musicVolume;
+            musicSource.volume = 1f; // Volume is controlled by the mixer group
             musicSource.Play();
         }
     }
@@ -171,16 +164,14 @@ public class AudioManager : MonoBehaviour
         foreach (var entry in soundEffects)
         {
             if (entry.id != id || entry.clip == null) continue;
-
-            sfxSource.PlayOneShot(entry.clip, entry.volume * _sfxVolume);
+            sfxSource.PlayOneShot(entry.clip, entry.volume);
             return;
         }
-
-        Debug.LogWarning($"[AudioManager] SFX with id '{id}' not found. Check your Sound Effects library.");
+        Debug.LogWarning($"[AudioManager] SFX '{id}' not found. Check Sound Effects library.");
     }
 
     /// <summary>
-    /// Switch the background music to a track by its string Id.
+    /// Switch background music to the track with the given Id.
     /// Example: AudioManager.Instance.PlayMusic("tension_zone2");
     /// </summary>
     public void PlayMusic(string id)
@@ -190,99 +181,119 @@ public class AudioManager : MonoBehaviour
         foreach (var entry in musicTracks)
         {
             if (entry.id != id || entry.clip == null) continue;
-
             musicSource.clip   = entry.clip;
             musicSource.loop   = entry.loop;
-            musicSource.volume = entry.volume * _musicVolume;
+            musicSource.volume = 1f; // Mixer controls actual volume
             musicSource.Play();
             return;
         }
-
-        Debug.LogWarning($"[AudioManager] Music track with id '{id}' not found. Check your Music Tracks library.");
+        Debug.LogWarning($"[AudioManager] Music '{id}' not found. Check Music Tracks library.");
     }
 
-    /// <summary>Stop the current music track.</summary>
-    public void StopMusic()
-    {
-        musicSource?.Stop();
-    }
-
-    /// <summary>Pause the current music track (can be resumed).</summary>
-    public void PauseMusic()
-    {
-        musicSource?.Pause();
-    }
-
-    /// <summary>Resume a paused music track.</summary>
-    public void ResumeMusic()
-    {
-        if (_musicEnabled) musicSource?.UnPause();
-    }
+    public void StopMusic()  => musicSource?.Stop();
+    public void PauseMusic() => musicSource?.Pause();
+    public void ResumeMusic(){ if (_musicEnabled) musicSource?.UnPause(); }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Public API — Volume & Toggle (wired to UI sliders and toggles)
+    // Public API — Volume (wire to UI sliders in the Options panel)
     // ─────────────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Set the global music volume. Wired to the music volume slider in the Inspector.
+    /// Set master volume (0–1). Wired to Master volume slider.
+    /// </summary>
+    public void SetMasterVolume(float value)
+    {
+        _masterVolume = Mathf.Clamp01(value);
+        SetMixerVolume(mixerParamMaster, _masterVolume);
+        SaveSettings();
+    }
+
+    /// <summary>
+    /// Set music volume (0–1). Wired to Music volume slider.
     /// </summary>
     public void SetMusicVolume(float value)
     {
         _musicVolume = Mathf.Clamp01(value);
-        if (musicSource != null) musicSource.volume = _musicVolume;
+        SetMixerVolume(mixerParamMusic, _musicVolume);
         SaveSettings();
     }
 
     /// <summary>
-    /// Set the global SFX volume. Wired to the SFX volume slider in the Inspector.
+    /// Set SFX volume (0–1). Wired to SFX volume slider.
     /// </summary>
     public void SetSFXVolume(float value)
     {
         _sfxVolume = Mathf.Clamp01(value);
+        SetMixerVolume(mixerParamSFX, _sfxVolume);
         SaveSettings();
     }
 
     /// <summary>
-    /// Enable or disable all music. Wired to the music Toggle in the Inspector.
+    /// Mute or unmute music. Wired to Music toggle.
     /// </summary>
     public void ToggleMusic(bool enabled)
     {
         _musicEnabled = enabled;
-        if (enabled)
-            musicSource?.UnPause();
-        else
-            musicSource?.Pause();
-
+        SetMixerVolume(mixerParamMusic, enabled ? _musicVolume : 0f);
+        if (!enabled) musicSource?.Pause();
+        else          musicSource?.UnPause();
         SaveSettings();
     }
 
     /// <summary>
-    /// Enable or disable all SFX. Wired to the SFX Toggle in the Inspector.
+    /// Mute or unmute SFX. Wired to SFX toggle.
     /// </summary>
     public void ToggleSFX(bool enabled)
     {
         _sfxEnabled = enabled;
+        SetMixerVolume(mixerParamSFX, enabled ? _sfxVolume : 0f);
         SaveSettings();
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Settings Persistence (PlayerPrefs)
+    // Mixer Helper
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Sets an AudioMixer exposed parameter using logarithmic (dB) conversion.
+    /// Linear sliders feel unnatural for volume — log conversion gives a
+    /// perceptually even volume curve.
+    /// volume = 0.001 is used as the floor (-60dB) instead of 0 to avoid log(0).
+    /// </summary>
+    private void SetMixerVolume(string paramName, float linearVolume)
+    {
+        if (gameMixer == null) return;
+        float dB = Mathf.Log10(Mathf.Max(linearVolume, 0.001f)) * 20f;
+        gameMixer.SetFloat(paramName, dB);
+    }
+
+    private void ApplyAllVolumesToMixer()
+    {
+        SetMixerVolume(mixerParamMaster, _masterVolume);
+        SetMixerVolume(mixerParamMusic,  _musicEnabled ? _musicVolume : 0f);
+        SetMixerVolume(mixerParamSFX,    _sfxEnabled   ? _sfxVolume   : 0f);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Settings Persistence
     // ─────────────────────────────────────────────────────────────────────────
 
     private void SaveSettings()
     {
-        PlayerPrefs.SetFloat("MusicVolume",  _musicVolume);
-        PlayerPrefs.SetFloat("SFXVolume",    _sfxVolume);
-        PlayerPrefs.SetInt("MusicEnabled",   _musicEnabled ? 1 : 0);
-        PlayerPrefs.SetInt("SFXEnabled",     _sfxEnabled   ? 1 : 0);
+        PlayerPrefs.SetFloat("MasterVolume",  _masterVolume);
+        PlayerPrefs.SetFloat("MusicVolume",   _musicVolume);
+        PlayerPrefs.SetFloat("SFXVolume",     _sfxVolume);
+        PlayerPrefs.SetInt("MusicEnabled",    _musicEnabled ? 1 : 0);
+        PlayerPrefs.SetInt("SFXEnabled",      _sfxEnabled   ? 1 : 0);
         PlayerPrefs.Save();
     }
 
     private void LoadSettings()
     {
-        _musicVolume  = PlayerPrefs.GetFloat("MusicVolume", defaultMusicVolume);
-        _sfxVolume    = PlayerPrefs.GetFloat("SFXVolume",   defaultSFXVolume);
-        _musicEnabled = PlayerPrefs.GetInt("MusicEnabled", 1) == 1;
-        _sfxEnabled   = PlayerPrefs.GetInt("SFXEnabled",   1) == 1;
+        _masterVolume = PlayerPrefs.GetFloat("MasterVolume", defaultMasterVolume);
+        _musicVolume  = PlayerPrefs.GetFloat("MusicVolume",  defaultMusicVolume);
+        _sfxVolume    = PlayerPrefs.GetFloat("SFXVolume",    defaultSFXVolume);
+        _musicEnabled = PlayerPrefs.GetInt("MusicEnabled",   1) == 1;
+        _sfxEnabled   = PlayerPrefs.GetInt("SFXEnabled",     1) == 1;
     }
 }

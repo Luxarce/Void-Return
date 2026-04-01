@@ -1,110 +1,119 @@
 using UnityEngine;
 
 /// <summary>
-/// VOID RETURN — PlayerController  (v3 — Tilemap & Collision Fix)
+/// Main player movement, gadget controller and animation driver.
 ///
-/// Changes from v2:
-/// ─ Ground check now uses OverlapBox instead of OverlapCircle, which works
-///   far more reliably with TilemapCollider2D + CompositeCollider2D seams.
-/// ─ Rigidbody2D Collision Detection must be set to Continuous in Inspector.
-/// ─ Movement in Normal-gravity branch uses MovePosition instead of direct
-///   velocity assignment so the physics solver handles depenetration properly.
-/// ─ surfaceStick force replaced with explicit gravity application every
-///   FixedUpdate so the player never floats off a tilemap surface.
-/// ─ Zero-G branch unchanged (force-based momentum, same as before).
-/// ─ Gravity Boots surface-walk branch updated to use MovePosition.
-///
-/// SETUP REQUIREMENTS (see Section 1 of the Solutions document):
-///   Player Rigidbody2D → Collision Detection: Continuous
-///   Player Rigidbody2D → Freeze Rotation Z: ON
-///   Player CapsuleCollider2D → size fitted to sprite
-///   Ground layer assigned to every tilemap / hull piece
-///   groundLayer mask set in Inspector
+/// CHANGES IN THIS VERSION:
+///  — Gadget keys updated: Q = Gravity Boots, F = Tether Gun,
+///    G = Gravity Grenade, V = Thruster Pack.
+///  — Rotation is now CLAMPED. The player sprite stays upright at 0° in
+///    Zero-G and tilts at most ±90° when inside a gravity zone. This prevents
+///    the astronaut from going fully upside-down unintentionally.
+///  — Inspector booleans let you enable/disable each gadget at game start
+///    for testing without needing to wire repair logic first.
+///  — Float animation tilt is driven by velocity angle, clamped to ±45° from
+///    upright so the sprite never rotates past horizontal.
 /// </summary>
 [RequireComponent(typeof(Rigidbody2D), typeof(Animator))]
 public class PlayerController : MonoBehaviour
 {
-    // ──────────────────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────────────
     // Inspector Fields
-    // ──────────────────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────────────
 
     [Header("Movement — Surface (Gravity Boots Active)")]
-    [Tooltip("Speed when walking on a surface with Gravity Boots active.")]
+    [Tooltip("Walking speed on a surface when Gravity Boots are active.")]
     public float walkSpeed = 5f;
 
-    [Tooltip("Impulse strength when jumping away from a surface.")]
+    [Tooltip("Impulse strength applied away from the surface when jumping.")]
     public float jumpForce = 10f;
 
-    [Tooltip("Linear drag on Rigidbody2D while grounded on a surface.")]
+    [Tooltip("Linear drag applied to Rigidbody2D while the player is on a surface.")]
     public float surfaceDrag = 6f;
 
     [Header("Movement — Zero-G / Airborne")]
     [Tooltip("Force added per FixedUpdate when the player presses WASD in Zero-G.")]
     public float thrustForce = 10f;
 
-    [Tooltip("Max speed cap in Zero-G.")]
+    [Tooltip("Maximum speed cap while floating in Zero-G.")]
     public float maxZeroGSpeed = 14f;
 
-    [Tooltip("Linear drag in Zero-G — controls how fast momentum decays.")]
+    [Tooltip("Linear drag while floating in Zero-G.")]
     [Range(0f, 3f)]
     public float zeroGDrag = 0.6f;
 
-    [Header("Rotation")]
-    [Tooltip("Degrees per second the player rotates to align feet with gravity.")]
-    public float rotationSpeed = 300f;
+    [Header("Rotation & Tilt")]
+    [Tooltip("How fast the player rotates to align with the gravity direction (degrees/sec). " +
+             "Only applies when inside a gravity zone.")]
+    public float rotationSpeed = 200f;
+
+    [Tooltip("Maximum degrees the player can tilt from the global upright (0°) position. " +
+             "90° = can walk on walls but never goes fully upside-down. " +
+             "Set lower (e.g. 45°) for a more upright feel.")]
+    [Range(0f, 180f)]
+    public float maxTiltDegrees = 90f;
 
     [Header("Ground Detection")]
-    [Tooltip("LayerMask for ground surfaces. MUST include your 'Ground' layer — nothing works without this.")]
+    [Tooltip("Set to your 'Ground' layer mask.")]
     public LayerMask groundLayer;
 
-    [Tooltip("Half-size of the ground detection box (match to the bottom of your CapsuleCollider2D).\n" +
-             "X = half the collider width, Y = a small value like 0.05.")]
-    public Vector2 groundCheckBoxHalfSize = new Vector2(0.3f, 0.05f);
+    [Tooltip("Radius of the overlap circle at the player's feet for ground detection.")]
+    [Range(0.05f, 0.5f)]
+    public float groundCheckRadius = 0.18f;
 
-    [Tooltip("Offset from pivot to the bottom of the feet. Should be just below the sprite's feet.\n" +
-             "Typical value for a 1-unit tall character: Y = -0.5")]
-    public Vector2 groundCheckOffset = new Vector2(0f, -0.52f);
+    [Tooltip("Offset from pivot to feet. This offset rotates with the player.")]
+    public Vector2 groundCheckOffset = new Vector2(0f, -0.55f);
 
-    [Tooltip("Extra distance downward the box is cast when checking for ground.\n" +
-             "Increase if the player is still clipping (try 0.1 first).")]
-    [Range(0f, 0.3f)]
-    public float groundCheckDistance = 0.05f;
-
-    [Header("Gadgets — Drag child component references here")]
-    [Tooltip("GravityBoots script on a child GameObject under Player.")]
+    [Header("Gadget References — Drag child scripts here")]
+    [Tooltip("GravityBoots script on a child GameObject.")]
     public GravityBoots gravityBoots;
 
-    [Tooltip("TetherGun script on a child GameObject under Player.")]
+    [Tooltip("TetherGun script on a child GameObject.")]
     public TetherGun tetherGun;
 
-    [Tooltip("GravityGrenadeLauncher script on a child GameObject under Player.")]
+    [Tooltip("GravityGrenadeLauncher script on a child GameObject.")]
     public GravityGrenadeLauncher grenadeGun;
 
-    [Tooltip("ThrusterPack script on a child GameObject under Player.")]
+    [Tooltip("ThrusterPack script on a child GameObject.")]
     public ThrusterPack thrusterPack;
 
-    [Header("Input Keys")]
-    [Tooltip("Key used to jump while grounded.")]
-    public KeyCode jumpKey = KeyCode.Space;
+    [Header("Gadget Keys")]
+    [Tooltip("Key to toggle Gravity Boots ON or OFF.")]
+    public KeyCode gadgetKeyBoots    = KeyCode.Q;
 
-    [Tooltip("Hotkey: activate / deactivate Gravity Boots.")]
-    public KeyCode gadgetKey1 = KeyCode.Alpha1;
+    [Tooltip("Key to select and fire the Tether Gun.")]
+    public KeyCode gadgetKeyTether   = KeyCode.F;
 
-    [Tooltip("Hotkey: select Tether Gun. Left-click fires / releases.")]
-    public KeyCode gadgetKey2 = KeyCode.Alpha2;
+    [Tooltip("Key to select and launch the Gravity Grenade.")]
+    public KeyCode gadgetKeyGrenade  = KeyCode.G;
 
-    [Tooltip("Hotkey: select Gravity Grenade. Left-click launches.")]
-    public KeyCode gadgetKey3 = KeyCode.Alpha3;
+    [Tooltip("Key to select and use the Thruster Pack.")]
+    public KeyCode gadgetKeyThruster = KeyCode.V;
 
-    [Tooltip("Hotkey: select Thruster Pack. Left-click fires burst.")]
-    public KeyCode gadgetKey4 = KeyCode.Alpha4;
+    [Tooltip("Scroll the mouse wheel to cycle between gadgets.")]
+    public bool allowScrollCycle = true;
 
     [Tooltip("Key to interact with nearby objects (repair modules, etc.).")]
     public KeyCode interactKey = KeyCode.E;
 
-    // ──────────────────────────────────────────────────────────────────────────
+    [Header("Gadget Enable Toggles (Testing / Debug)")]
+    [Tooltip("If ON, the Gravity Boots start available from the first frame (good for testing). " +
+             "In a real playthrough, boots unlock via Life Support repair.")]
+    public bool enableBootsAtStart    = true;
+
+    [Tooltip("If ON, the Tether Gun starts available without repairing Navigation. " +
+             "Turn OFF for normal gameplay — Navigation repair unlocks it.")]
+    public bool enableTetherAtStart   = false;
+
+    [Tooltip("If ON, the Gravity Grenade starts available without repairing Hull Plating.")]
+    public bool enableGrenadeAtStart  = false;
+
+    [Tooltip("If ON, the Thruster Pack starts available without repairing the Engine Core.")]
+    public bool enableThrusterAtStart = false;
+
+    // ─────────────────────────────────────────────────────────────────────────
     // Private State
-    // ──────────────────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────────────
 
     private Rigidbody2D _rb;
     private Animator    _anim;
@@ -118,9 +127,9 @@ public class PlayerController : MonoBehaviour
     private float _inputH;
     private float _inputV;
     private bool  _jumpQueued;
-    private int   _activeGadgetIndex;
+    private int   _activeGadgetIndex = 0;
 
-    // Animator hash cache
+    // ─── Animator Hash Cache ─────────────────────────────────────────────────
     private static readonly int H_IsWalking     = Animator.StringToHash("IsWalking");
     private static readonly int H_IsFloating    = Animator.StringToHash("IsFloating");
     private static readonly int H_IsThrusting   = Animator.StringToHash("IsThrusting");
@@ -131,16 +140,20 @@ public class PlayerController : MonoBehaviour
     private static readonly int H_SpeedX        = Animator.StringToHash("SpeedX");
     private static readonly int H_SpeedY        = Animator.StringToHash("SpeedY");
 
-    // ──────────────────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────────────
     // Unity Lifecycle
-    // ──────────────────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────────────
 
     private void Awake()
     {
         _rb   = GetComponent<Rigidbody2D>();
         _anim = GetComponent<Animator>();
+        _rb.gravityScale = 0f;
+    }
 
-        _rb.gravityScale = 0f; // All gravity handled via GravityZone
+    private void Start()
+    {
+        ApplyStartingGadgetToggles();
     }
 
     private void Update()
@@ -161,39 +174,77 @@ public class PlayerController : MonoBehaviour
         SmoothRotationToGravity();
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────────────
+    // Startup Gadget Toggles
+    // ─────────────────────────────────────────────────────────────────────────
+
+    private void ApplyStartingGadgetToggles()
+    {
+        // Boots are always on the Player — just enable/disable the component
+        if (gravityBoots != null)
+            gravityBoots.enabled = enableBootsAtStart;
+
+        // Tether, Grenade, Thruster activate their parent GameObjects
+        if (tetherGun    != null) tetherGun.gameObject.SetActive(enableTetherAtStart);
+        if (grenadeGun   != null) grenadeGun.gameObject.SetActive(enableGrenadeAtStart);
+        if (thrusterPack != null) thrusterPack.gameObject.SetActive(enableThrusterAtStart);
+
+        // Refresh HUD unlock state
+        GadgetHUDManager.Instance?.SetGadgetAvailable(0, enableBootsAtStart);
+        GadgetHUDManager.Instance?.SetGadgetAvailable(1, enableTetherAtStart);
+        GadgetHUDManager.Instance?.SetGadgetAvailable(2, enableGrenadeAtStart);
+        GadgetHUDManager.Instance?.SetGadgetAvailable(3, enableThrusterAtStart);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // Input
-    // ──────────────────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────────────
 
     private void GatherInput()
     {
         _inputH = Input.GetAxisRaw("Horizontal");
         _inputV = Input.GetAxisRaw("Vertical");
-        if (Input.GetKeyDown(jumpKey)) _jumpQueued = true;
+        if (Input.GetKeyDown(KeyCode.Space)) _jumpQueued = true;
     }
 
     private void HandleGadgetSwitch()
     {
-        if (Input.GetKeyDown(gadgetKey1)) SwitchGadget(0);
-        if (Input.GetKeyDown(gadgetKey2)) SwitchGadget(1);
-        if (Input.GetKeyDown(gadgetKey3)) SwitchGadget(2);
-        if (Input.GetKeyDown(gadgetKey4)) SwitchGadget(3);
+        if (Input.GetKeyDown(gadgetKeyBoots))    SwitchGadget(0);
+        if (Input.GetKeyDown(gadgetKeyTether))   SwitchGadget(1);
+        if (Input.GetKeyDown(gadgetKeyGrenade))  SwitchGadget(2);
+        if (Input.GetKeyDown(gadgetKeyThruster)) SwitchGadget(3);
 
-        float scroll = Input.GetAxis("Mouse ScrollWheel");
-        if (scroll >  0.01f) SwitchGadget((_activeGadgetIndex + 1) % 4);
-        if (scroll < -0.01f) SwitchGadget((_activeGadgetIndex + 3) % 4);
+        if (allowScrollCycle)
+        {
+            float scroll = Input.GetAxis("Mouse ScrollWheel");
+            if (scroll > 0.01f)  SwitchGadget((_activeGadgetIndex + 1) % 4);
+            if (scroll < -0.01f) SwitchGadget((_activeGadgetIndex + 3) % 4);
+        }
     }
 
     private void HandleGadgetUse()
     {
         if (!Input.GetMouseButtonDown(0)) return;
         _anim.SetTrigger(H_UseGadget);
+
         switch (_activeGadgetIndex)
         {
-            case 0: gravityBoots?.Toggle();                                 break;
-            case 1: tetherGun?.Fire(GetAimDirection());                     break;
-            case 2: grenadeGun?.Launch(GetAimDirection());                  break;
-            case 3: thrusterPack?.Activate(new Vector2(_inputH, _inputV));  break;
+            case 0:
+                if (gravityBoots != null && gravityBoots.enabled)
+                    gravityBoots.Toggle();
+                break;
+            case 1:
+                if (tetherGun != null && tetherGun.gameObject.activeSelf)
+                    tetherGun.Fire(GetAimDirection());
+                break;
+            case 2:
+                if (grenadeGun != null && grenadeGun.gameObject.activeSelf)
+                    grenadeGun.Launch(GetAimDirection());
+                break;
+            case 3:
+                if (thrusterPack != null && thrusterPack.gameObject.activeSelf)
+                    thrusterPack.Activate(new Vector2(_inputH, _inputV));
+                break;
         }
     }
 
@@ -211,54 +262,31 @@ public class PlayerController : MonoBehaviour
         return ((Vector2)(mouse - transform.position)).normalized;
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
-    // Ground Check  ← KEY FIX: BoxCast instead of OverlapCircle
-    // ──────────────────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────────────
+    // Physics
+    // ─────────────────────────────────────────────────────────────────────────
 
     private void CheckGround()
     {
-        // Rotate the offset so feet always point away from gravity source.
         Vector2 rotatedOffset = (Vector2)(transform.rotation * (Vector3)groundCheckOffset);
-        Vector2 origin        = (Vector2)transform.position + rotatedOffset;
-
-        // BoxCast downward (in the gravity direction) a small distance.
-        // This is much more reliable with Tilemap + CompositeCollider2D seams
-        // than a simple OverlapCircle, which can fall between tile edges.
-        Vector2 castDir = _zoneGravity.sqrMagnitude > 0.01f
-            ? _zoneGravity.normalized
-            : Vector2.down;
-
-        RaycastHit2D hit = Physics2D.BoxCast(
-            origin, groundCheckBoxHalfSize * 2f,
-            transform.eulerAngles.z,
-            castDir, groundCheckDistance, groundLayer);
-
-        _isGrounded = hit.collider != null;
+        Vector2 checkPos      = (Vector2)transform.position + rotatedOffset;
+        _isGrounded           = Physics2D.OverlapCircle(checkPos, groundCheckRadius, groundLayer);
     }
-
-    // ──────────────────────────────────────────────────────────────────────────
-    // Movement  ← MovePosition used for surface walking (no clipping)
-    // ──────────────────────────────────────────────────────────────────────────
 
     private void ApplyMovement()
     {
-        bool bootsOn    = gravityBoots != null && gravityBoots.IsActive;
+        bool bootsOn    = gravityBoots != null && gravityBoots.enabled && gravityBoots.IsActive;
         bool hasGravity = _zoneGravity.sqrMagnitude > 0.01f;
 
-        // BRANCH 1: Gravity Boots + grounded + gravity zone → surface walk
+        // Branch 1: Surface walk (boots + grounded + in a gravity zone)
         if (_isGrounded && bootsOn && hasGravity)
         {
             Vector2 gravNorm     = _zoneGravity.normalized;
             Vector2 surfaceRight = new Vector2(-gravNorm.y, gravNorm.x);
+            float   intoSurface  = Mathf.Max(0f, Vector2.Dot(_rb.linearVelocity, gravNorm));
 
-            // Use MovePosition so the physics engine resolves overlaps correctly.
-            Vector2 move = surfaceRight * (_inputH * walkSpeed * Time.fixedDeltaTime);
-            _rb.MovePosition(_rb.position + move);
-
-            // Zero out lateral velocity so drag doesn't fight MovePosition.
-            float vertComponent = Vector2.Dot(_rb.linearVelocity, gravNorm);
-            _rb.linearVelocity  = gravNorm * Mathf.Max(0f, vertComponent);
-            _rb.linearDamping   = surfaceDrag;
+            _rb.linearVelocity = surfaceRight * (_inputH * walkSpeed) + gravNorm * intoSurface;
+            _rb.linearDamping  = surfaceDrag;
 
             if (_jumpQueued)
             {
@@ -266,7 +294,7 @@ public class PlayerController : MonoBehaviour
                 _anim.SetTrigger(H_Jump);
             }
         }
-        // BRANCH 2: Normal/MicroPull gravity, boots off / airborne
+        // Branch 2: In a gravity zone, boots off or airborne
         else if (hasGravity && _currentGravityState != GravityState.ZeroG)
         {
             _rb.linearVelocity = new Vector2(_inputH * walkSpeed, _rb.linearVelocity.y);
@@ -278,7 +306,7 @@ public class PlayerController : MonoBehaviour
                 _anim.SetTrigger(H_Jump);
             }
         }
-        // BRANCH 3: Zero-G free float
+        // Branch 3: Zero-G free float
         else
         {
             Vector2 dir = new Vector2(_inputH, _inputV).normalized;
@@ -290,45 +318,59 @@ public class PlayerController : MonoBehaviour
         _jumpQueued = false;
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
-    // Gravity / Rotation
-    // ──────────────────────────────────────────────────────────────────────────
-
     private void ApplyGravityForces()
     {
         if (_currentGravityState == GravityState.ZeroG) return;
         if (_zoneGravity.sqrMagnitude < 0.01f)          return;
-
         _rb.AddForce(_zoneGravity, ForceMode2D.Force);
-
-        if (_isRiftDisoriented)
-            _rb.angularVelocity += _riftSpinForce * Time.fixedDeltaTime;
+        if (_isRiftDisoriented) _rb.angularVelocity += _riftSpinForce * Time.fixedDeltaTime;
     }
 
     private void ClampZeroGVelocity()
     {
-        if (_currentGravityState != GravityState.ZeroG)         return;
-        if (_rb.linearVelocity.magnitude <= maxZeroGSpeed)       return;
-        _rb.linearVelocity = _rb.linearVelocity.normalized * maxZeroGSpeed;
+        if (_currentGravityState != GravityState.ZeroG) return;
+        if (_rb.linearVelocity.magnitude > maxZeroGSpeed)
+            _rb.linearVelocity = _rb.linearVelocity.normalized * maxZeroGSpeed;
     }
 
+    /// <summary>
+    /// Rotates the player to align with gravity direction,
+    /// but clamps the result so the sprite never tilts more than
+    /// maxTiltDegrees from vertical (upright 0°).
+    /// </summary>
     private void SmoothRotationToGravity()
     {
-        if (_isRiftDisoriented)                return;
-        if (_zoneGravity.sqrMagnitude < 0.01f) return;
+        if (_isRiftDisoriented) return;
 
-        Vector2 gravNorm  = _zoneGravity.normalized;
-        float target      = Mathf.Atan2(-gravNorm.x, gravNorm.y) * Mathf.Rad2Deg;
-        float current     = transform.eulerAngles.z;
-        float next        = Mathf.MoveTowardsAngle(current, target, rotationSpeed * Time.fixedDeltaTime);
+        float targetAngle = 0f; // Default: stay upright
+
+        if (_zoneGravity.sqrMagnitude > 0.01f)
+        {
+            Vector2 gravNorm = _zoneGravity.normalized;
+            targetAngle = Mathf.Atan2(-gravNorm.x, gravNorm.y) * Mathf.Rad2Deg;
+
+            // Clamp so the player never tilts more than maxTiltDegrees from upright (0°)
+            targetAngle = Mathf.Clamp(
+                Mathf.DeltaAngle(0f, targetAngle),
+                -maxTiltDegrees,
+                maxTiltDegrees
+            );
+        }
+
+        float current = transform.eulerAngles.z;
+        // Convert to signed angle for smooth MoveTowards
+        float currentSigned = current > 180f ? current - 360f : current;
+        float next = Mathf.MoveTowardsAngle(currentSigned, targetAngle,
+                                             rotationSpeed * Time.fixedDeltaTime);
         transform.rotation = Quaternion.Euler(0f, 0f, next);
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────────────
     // Public API — Called by GravityZone
-    // ──────────────────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────────────
 
-    public void ApplyZoneGravity(GravityState state, Vector2 gravity, bool disorient, float spinForce)
+    public void ApplyZoneGravity(GravityState state, Vector2 gravity,
+                                  bool disorient, float spinForce)
     {
         _currentGravityState = state;
         _zoneGravity         = gravity;
@@ -337,22 +379,24 @@ public class PlayerController : MonoBehaviour
         FindFirstObjectByType<GameHUD>()?.SetGravityState(state);
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
-    // Animations & Visuals
-    // ──────────────────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────────────
+    // Animations
+    // ─────────────────────────────────────────────────────────────────────────
 
     private void UpdateAnimations()
     {
         bool walking   = _isGrounded && Mathf.Abs(_inputH) > 0.05f;
         bool floating  = !_isGrounded && _currentGravityState == GravityState.ZeroG;
-        bool thrusting = thrusterPack != null && thrusterPack.IsActive;
+        bool thrusting = thrusterPack != null
+                         && thrusterPack.gameObject.activeSelf
+                         && thrusterPack.IsActive;
 
         _anim.SetBool(H_IsWalking,     walking);
         _anim.SetBool(H_IsFloating,    floating);
         _anim.SetBool(H_IsThrusting,   thrusting);
         _anim.SetBool(H_IsDisoriented, _isRiftDisoriented);
-        _anim.SetFloat(H_SpeedX,       _rb.linearVelocity.x);
-        _anim.SetFloat(H_SpeedY,       _rb.linearVelocity.y);
+        _anim.SetFloat(H_SpeedX, _rb.linearVelocity.x);
+        _anim.SetFloat(H_SpeedY, _rb.linearVelocity.y);
     }
 
     private void FlipSprite()
@@ -361,26 +405,16 @@ public class PlayerController : MonoBehaviour
             transform.localScale = new Vector3(_inputH > 0f ? 1f : -1f, 1f, 1f);
     }
 
-    // ──────────────────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────────────
     // Gizmos
-    // ──────────────────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────────────
 
     private void OnDrawGizmosSelected()
     {
-        // Draw the ground check box so you can verify size and placement in Scene view.
-        Gizmos.color = _isGrounded ? Color.green : Color.red;
-        Vector2 rotOff = Application.isPlaying
+        Gizmos.color = Color.green;
+        Vector2 rotated = Application.isPlaying
             ? (Vector2)(transform.rotation * (Vector3)groundCheckOffset)
             : groundCheckOffset;
-        Vector2 castDir = (_zoneGravity.sqrMagnitude > 0.01f && Application.isPlaying)
-            ? _zoneGravity.normalized : Vector2.down;
-
-        Gizmos.matrix = Matrix4x4.TRS(
-            (Vector3)((Vector2)transform.position + rotOff + castDir * groundCheckDistance),
-            Quaternion.Euler(0f, 0f, transform.eulerAngles.z),
-            Vector3.one);
-        Gizmos.DrawWireCube(Vector3.zero,
-            new Vector3(groundCheckBoxHalfSize.x * 2f, groundCheckBoxHalfSize.y * 2f, 0f));
-        Gizmos.matrix = Matrix4x4.identity;
+        Gizmos.DrawWireSphere((Vector2)transform.position + rotated, groundCheckRadius);
     }
 }

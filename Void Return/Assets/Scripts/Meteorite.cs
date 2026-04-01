@@ -1,65 +1,57 @@
 using UnityEngine;
+using System;
 
 /// <summary>
-/// Controls an individual meteorite projectile.
+/// Controls a single meteorite projectile.
 ///
-/// FIX NOTES (v2):
-/// ─────────────────────────────────────────────────────────────────────────
-/// ISSUE: Meteorites were not disappearing on impact.
-/// ROOT CAUSES FIXED:
-///   1. The original script checked impactLayers via bitmask comparison
-///      BEFORE any other logic. If impactLayers was left unassigned (value 0),
-///      the bitmask check always failed silently — the Impact() method was
-///      never reached. Fix: Added a fallback that fires Impact on ANY
-///      collision if impactLayers is empty (value 0 / Nothing).
-///   2. The original used both OnCollisionEnter2D AND OnTriggerEnter2D.
-///      If the meteorite's own Collider2D was a trigger, OnCollisionEnter2D
-///      never fired. Now: meteorite uses a non-trigger Collider2D and relies
-///      on OnCollisionEnter2D only. Impact zone layers are checked via the
-///      impactLayers mask OR hit anything.
-///   3. Added a _hasImpacted guard flag so multiple collision events in the
-///      same frame cannot call Impact() twice (which was causing double VFX).
-///   4. Destroy is now deferred with a 0.1s delay to let the VFX instantiate
-///      before the parent is removed.
-/// ─────────────────────────────────────────────────────────────────────────
-///
-/// SETUP CHECKLIST:
-///   □ Meteorite prefab must have a non-trigger Collider2D (e.g., CircleCollider2D
-///     with Is Trigger = OFF)
-///   □ Meteorite prefab must have Rigidbody2D (Gravity Scale: 0,
-///     Collision Detection: Continuous)
-///   □ Assign Impact Layers in the Inspector (at minimum: Ground, Debris, Player).
-///     If you leave it as "Nothing", the meteorite will destroy itself on ANY hit.
-///   □ Assign Impact VFX Prefab (the MeteoriteImpactVFX prefab from Effects folder)
-///
-/// Place this script on each meteorite prefab.
+/// CHANGES IN THIS VERSION:
+///  — Added static event OnAnyImpact that MeteoriteManager subscribes to.
+///    When any meteorite hits, it fires this event with its world position and
+///    type — MeteoriteManager then spawns the correct material drops there.
+///  — meteoriteType field set by MeteoriteManager at spawn time.
+///  — _hasImpacted guard prevents double-impact.
+///  — Collider is force-set to non-trigger in Awake so OnCollisionEnter2D fires.
 /// </summary>
 [RequireComponent(typeof(Rigidbody2D))]
 public class Meteorite : MonoBehaviour
 {
     // ─────────────────────────────────────────────────────────────────────────
+    // Static Event — MeteoriteManager subscribes to this
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Fired by every Meteorite when it impacts.
+    /// Params: impact world position, meteorite type.
+    /// MeteoriteManager.HandleMeteoriteImpact subscribes to this to spawn drops.
+    /// </summary>
+    public static event Action<Vector2, MeteoriteType> OnAnyImpact;
+
+    // ─────────────────────────────────────────────────────────────────────────
     // Inspector Fields
     // ─────────────────────────────────────────────────────────────────────────
 
+    [Header("Identity")]
+    [Tooltip("Set by MeteoriteManager at spawn. Determines which drop table is used.")]
+    public MeteoriteType meteoriteType = MeteoriteType.Stray;
+
     [Header("Flight")]
-    [Tooltip("Speed at which the meteorite travels toward its target in world units per second.")]
+    [Tooltip("Speed the meteorite travels toward its target.")]
     public float speed = 22f;
 
-    [Tooltip("Degrees per second the meteorite spins as it flies (tumble effect).")]
+    [Tooltip("Degrees per second the meteorite tumbles as it flies.")]
     public float tumbleSpeed = 90f;
 
     [Header("Impact")]
-    [Tooltip("VFX prefab spawned at the impact point when the meteorite hits something. " +
-             "Assign the MeteoriteImpactVFX prefab here.")]
+    [Tooltip("VFX prefab spawned at the impact point. Assign MeteoriteImpactVFX.")]
     public GameObject impactVFXPrefab;
 
-    [Tooltip("Layers that trigger an impact. Set to include Ground, Debris, Player. " +
-             "IMPORTANT: If this is set to 'Nothing' (value 0), the meteorite will " +
-             "destroy itself when hitting ANY collider — use this as a safe fallback.")]
+    [Tooltip("Layers that register as a valid impact. " +
+             "Assign: Ground, Debris, Player. " +
+             "If left as 'Nothing' (0), any collision will trigger an impact.")]
     public LayerMask impactLayers;
 
     [Header("Audio")]
-    [Tooltip("Sound played at the impact point.")]
+    [Tooltip("Sound played at impact world position.")]
     public AudioClip impactClip;
 
     [Tooltip("Volume of the impact sound.")]
@@ -72,7 +64,7 @@ public class Meteorite : MonoBehaviour
 
     private Rigidbody2D _rb;
     private bool        _launched    = false;
-    private bool        _hasImpacted = false;  // Guard — prevents double-impact
+    private bool        _hasImpacted = false;
 
     // ─────────────────────────────────────────────────────────────────────────
     // Unity Lifecycle
@@ -82,11 +74,9 @@ public class Meteorite : MonoBehaviour
     {
         _rb              = GetComponent<Rigidbody2D>();
         _rb.gravityScale = 0f;
-
-        // Continuous collision detection prevents tunneling through thin colliders
         _rb.collisionDetectionMode = CollisionDetectionMode2D.Continuous;
 
-        // Ensure our collider is NOT a trigger — we need OnCollisionEnter2D
+        // Must be non-trigger so OnCollisionEnter2D fires
         var col = GetComponent<Collider2D>();
         if (col != null) col.isTrigger = false;
     }
@@ -94,31 +84,26 @@ public class Meteorite : MonoBehaviour
     private void FixedUpdate()
     {
         if (!_launched || _hasImpacted) return;
-
-        // Apply spin
         _rb.angularVelocity = tumbleSpeed;
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Public API — Called by MeteoriteManager
+    // Public API
     // ─────────────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Called by MeteoriteManager after spawning to set the meteorite's target.
-    /// Launches the meteorite toward the given world position at the set speed.
+    /// Called by MeteoriteManager after spawning to launch toward a target.
     /// </summary>
     public void SetTarget(Vector2 worldPosition)
     {
-        Vector2 direction  = (worldPosition - (Vector2)transform.position).normalized;
-        _rb.linearVelocity = direction * speed;
-        _launched          = true;
+        Vector2 dir    = (worldPosition - (Vector2)transform.position).normalized;
+        _rb.linearVelocity = dir * speed;
+        _launched      = true;
 
-        // Orient the sprite in the direction of flight
-        float angle = Mathf.Atan2(direction.y, direction.x) * Mathf.Rad2Deg;
+        float angle    = Mathf.Atan2(dir.y, dir.x) * Mathf.Rad2Deg;
         transform.rotation = Quaternion.Euler(0f, 0f, angle - 90f);
 
-        // Safety: auto-destroy after 15 seconds even if nothing is hit
-        // (prevents rogue meteorites floating indefinitely)
+        // Safety auto-destroy if nothing is ever hit
         Destroy(gameObject, 15f);
     }
 
@@ -130,13 +115,12 @@ public class Meteorite : MonoBehaviour
     {
         if (_hasImpacted) return;
 
-        // If impactLayers is set (not Nothing/0), check that the hit layer qualifies
+        // If impactLayers is set, only accept valid layers
         if (impactLayers.value != 0)
         {
-            bool layerMatches = ((1 << col.gameObject.layer) & impactLayers.value) != 0;
-            if (!layerMatches) return;
+            bool layerMatch = ((1 << col.gameObject.layer) & impactLayers.value) != 0;
+            if (!layerMatch) return;
         }
-        // If impactLayers is Nothing (0), accept any collision as an impact
 
         Vector2 contactPoint = col.contacts.Length > 0
             ? col.contacts[0].point
@@ -151,35 +135,37 @@ public class Meteorite : MonoBehaviour
 
     private void Impact(Vector2 position, GameObject hitObject)
     {
-        // Set guard FIRST to prevent re-entry
         _hasImpacted = true;
 
-        // Stop all physics movement immediately
+        // Stop physics
         _rb.linearVelocity  = Vector2.zero;
         _rb.angularVelocity = 0f;
         _rb.bodyType        = RigidbodyType2D.Kinematic;
 
-        // Disable our collider so we don't keep triggering things
+        // Disable collider
         var col = GetComponent<Collider2D>();
         if (col != null) col.enabled = false;
 
-        // Spawn VFX at impact point
+        // Spawn VFX
         if (impactVFXPrefab != null)
             Instantiate(impactVFXPrefab, position, Quaternion.identity);
 
-        // Play impact sound at world position (survives object destruction)
+        // Play sound at world position (survives destruction)
         if (impactClip != null)
             AudioSource.PlayClipAtPoint(impactClip, position, impactVolume);
 
-        // Notify if a ship module was hit
+        // Notify of module hit
         if (hitObject.TryGetComponent<ShipModule>(out var module))
-            NotificationManager.Instance?.Show($"{module.moduleName} hit by meteorite!", urgent: true);
+            NotificationManager.Instance?.Show($"{module.moduleName} damaged by meteorite!", urgent: true);
 
-        // Notify if the player was hit
+        // Notify of player hit
         if (hitObject.CompareTag("Player"))
-            NotificationManager.Instance?.Show("Meteorite impact! Take cover!", urgent: true);
+            NotificationManager.Instance?.Show("Meteorite impact! Watch out!", urgent: true);
 
-        // Destroy with a tiny delay (0.05s) to allow VFX to instantiate cleanly
+        // Fire the static event — MeteoriteManager will spawn material drops
+        OnAnyImpact?.Invoke(position, meteoriteType);
+
+        // Destroy with tiny delay so VFX instantiates cleanly
         Destroy(gameObject, 0.05f);
     }
 }
