@@ -6,152 +6,101 @@ using UnityEngine.SceneManagement;
 /// <summary>
 /// In-game HUD controller.
 ///
-/// CHANGES IN THIS VERSION:
-///  — ALL button and slider listeners are wired in code (Start method).
-///    You no longer need to set onClick events in the Inspector.
-///    Just drag the UI component references into the fields below and it works.
-///  — Added masterVolumeSlider support (requires AudioMixer / AudioManager v2).
-///  — Inventory toggle is handled by InventoryUI script (Tab key). GameHUD
-///    no longer manages the inventory panel directly.
-///  — Game Over panel setup included with working button wiring.
-///  — Module progress wrappers exposed as public methods for GameManager.
+/// FIX — PROGRESS BARS NOT UPDATING:
+///  Root cause: UpdateModuleProgress() checked moduleProgressSliders[i] for null
+///  but if the array SIZE was correct yet the ELEMENTS were not assigned in the
+///  Inspector, the null check passed (non-null default element) but value was
+///  never set. Added a Debug.Log so you can see when progress is received.
+///  Also: Slider Min/Max must be 0/1. If Min and Max are both 0, the slider
+///  will never visually move. This is the most common mistake.
+///
+/// FIX — ZONE BADGE COLORS:
+///  SetZone() now also accepts zone numbers outside 1-3 gracefully.
+///  Colors exposed in Inspector so you can tweak them without code changes.
 /// </summary>
 public class GameHUD : MonoBehaviour
 {
-    // ─────────────────────────────────────────────────────────────────────────
-    // Inspector Fields
-    // ─────────────────────────────────────────────────────────────────────────
-
     [Header("Oxygen Meter")]
-    [Tooltip("Slider for the oxygen bar. Set Min=0, Max=1, Whole Numbers=OFF.")]
-    public Slider oxygenSlider;
-
-    [Tooltip("The Fill Image inside the oxygen slider (for color transitions).")]
-    public Image oxygenFillImage;
-
-    [Tooltip("Text label showing the percentage (e.g., '72%').")]
-    public TextMeshProUGUI oxygenLabel;
-
-    [Tooltip("Fill color above the warning threshold.")]
-    public Color oxygenColorNormal   = new Color(0f, 0.9f, 1f);
-
-    [Tooltip("Fill color in the warning range.")]
-    public Color oxygenColorWarning  = Color.yellow;
-
-    [Tooltip("Fill color in the critical range.")]
-    public Color oxygenColorCritical = Color.red;
-
-    [Tooltip("Normalized oxygen below which warning color activates.")]
-    [Range(0.05f, 0.5f)]
-    public float oxygenWarningLevel  = 0.30f;
-
-    [Tooltip("Normalized oxygen below which critical color activates.")]
-    [Range(0.01f, 0.2f)]
-    public float oxygenCriticalLevel = 0.10f;
+    public Slider           oxygenSlider;
+    public Image            oxygenFillImage;
+    public TextMeshProUGUI  oxygenLabel;
+    public Color            oxygenColorNormal   = new Color(0f, 0.9f, 1f);
+    public Color            oxygenColorWarning  = Color.yellow;
+    public Color            oxygenColorCritical = Color.red;
+    [Range(0.05f, 0.5f)] public float oxygenWarningLevel  = 0.30f;
+    [Range(0.01f, 0.2f)] public float oxygenCriticalLevel = 0.10f;
 
     [Header("Gravity State Indicator")]
-    [Tooltip("Text label showing current gravity state name.")]
     public TextMeshProUGUI gravityStateText;
-
-    [Tooltip("Image showing the gravity state icon.")]
-    public Image gravityStateIcon;
-
-    [Tooltip("[0]=Normal, [1]=ZeroG, [2]=MicroPull, [3]=Rift.")]
-    public Sprite[] gravityStateSprites;
+    public Image           gravityStateIcon;
+    public Sprite[]        gravityStateSprites;
 
     [Header("Zone Badge")]
-    [Tooltip("Badge background image — color changes per zone.")]
-    public Image zoneBadgeImage;
+    [Tooltip("Background image of the zone badge — its color changes per zone.")]
+    public Image            zoneBadgeImage;
 
-    [Tooltip("Zone name text on the badge.")]
-    public TextMeshProUGUI zoneNameText;
+    [Tooltip("Text label showing the zone name on the badge.")]
+    public TextMeshProUGUI  zoneNameText;
 
-    public Color zone1Color = new Color(0f, 1f, 0.5f, 0.8f);
-    public Color zone2Color = new Color(1f, 0.85f, 0f, 0.8f);
-    public Color zone3Color = new Color(1f, 0.2f, 0.1f, 0.8f);
+    [Tooltip("Badge color when the player is in Zone 1 (Debris Field).")]
+    public Color zone1Color = new Color(0f, 1f, 0.5f, 0.9f);
+
+    [Tooltip("Badge color when in Zone 2 (Drift Ring).")]
+    public Color zone2Color = new Color(1f, 0.85f, 0f, 0.9f);
+
+    [Tooltip("Badge color when in Zone 3 (Deep Scatter).")]
+    public Color zone3Color = new Color(1f, 0.2f, 0.1f, 0.9f);
+
+    [Tooltip("Badge color outside all defined zones.")]
+    public Color defaultZoneColor = new Color(0.5f, 0.5f, 0.5f, 0.7f);
 
     [Header("Module Progress Bars")]
-    [Tooltip("[0]=LifeSupport, [1]=HullPlating, [2]=Navigation, [3]=EngineCore.")]
+    [Tooltip("Sliders for each module: [0]=LifeSupport, [1]=Hull, [2]=Nav, [3]=Engine.\n" +
+             "IMPORTANT: Set each slider's Min Value = 0 and Max Value = 1 in the Inspector.\n" +
+             "If both are 0, the bar will never visually advance.")]
     public Slider[] moduleProgressSliders;
-
-    [Tooltip("Label text per module slider.")]
     public TextMeshProUGUI[] moduleProgressLabels;
 
     [Header("Pause Menu")]
-    [Tooltip("Root pause overlay panel. Shown when Escape is pressed.")]
     public GameObject pausePanel;
+    public Button     resumeButton;
+    public Button     saveButton;
+    public Button     loadButton;
+    public Button     optionsButton;
+    public Button     exitButton;
 
-    [Tooltip("Button: resumes the game.")]
-    public Button resumeButton;
-
-    [Tooltip("Button: saves game via SaveManager.")]
-    public Button saveButton;
-
-    [Tooltip("Button: loads last save via SaveManager.")]
-    public Button loadButton;
-
-    [Tooltip("Button: opens the options sub-panel.")]
-    public Button optionsButton;
-
-    [Tooltip("Button: returns to the Main Menu.")]
-    public Button exitButton;
-
-    [Header("Options Sub-Panel (inside Pause)")]
-    [Tooltip("Options panel shown when Options is clicked from the pause menu.")]
+    [Header("Options Sub-Panel")]
     public GameObject optionsPanel;
-
-    [Tooltip("Slider for master volume (0–1). Wired to AudioManager.SetMasterVolume.")]
-    public Slider masterVolumeSlider;
-
-    [Tooltip("Slider for music volume (0–1). Wired to AudioManager.SetMusicVolume.")]
-    public Slider musicVolumeSlider;
-
-    [Tooltip("Slider for SFX volume (0–1). Wired to AudioManager.SetSFXVolume.")]
-    public Slider sfxVolumeSlider;
-
-    [Tooltip("Toggle for muting music. Wired to AudioManager.ToggleMusic.")]
-    public Toggle musicToggle;
-
-    [Tooltip("Toggle for muting SFX. Wired to AudioManager.ToggleSFX.")]
-    public Toggle sfxToggle;
-
-    [Tooltip("Button: closes options and returns to pause menu.")]
-    public Button optionsBackButton;
+    public Slider     masterVolumeSlider;
+    public Slider     musicVolumeSlider;
+    public Slider     sfxVolumeSlider;
+    public Toggle     musicToggle;
+    public Toggle     sfxToggle;
+    public Button     optionsBackButton;
 
     [Header("Game Over Panel")]
-    [Tooltip("Full-screen Game Over overlay. Set inactive by default.")]
     public GameObject gameOverPanel;
-
-    [Tooltip("Button on Game Over panel: returns to Main Menu.")]
-    public Button gameOverReturnButton;
-
-    [Tooltip("Button on Game Over panel: reloads last save.")]
-    public Button gameOverRetryButton;
+    public Button     gameOverReturnButton;
+    public Button     gameOverRetryButton;
 
     [Header("Scene Names")]
-    [Tooltip("Exact name of the Main Menu scene in Build Settings.")]
     public string mainMenuSceneName = "MainMenu";
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Private State
-    // ─────────────────────────────────────────────────────────────────────────
-
     private bool _isPaused;
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // Unity Lifecycle
     // ─────────────────────────────────────────────────────────────────────────
 
     private void Start()
     {
-        // Hide all overlay panels
         pausePanel?.SetActive(false);
         optionsPanel?.SetActive(false);
         gameOverPanel?.SetActive(false);
 
-        WirePauseMenuButtons();
+        WirePauseButtons();
         WireOptionsPanel();
         WireGameOverPanel();
+        ValidateProgressSliders();
     }
 
     private void Update()
@@ -160,13 +109,37 @@ public class GameHUD : MonoBehaviour
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Button Wiring — done entirely in code
+    // Validation helpers
     // ─────────────────────────────────────────────────────────────────────────
 
-    private void WirePauseMenuButtons()
+    private void ValidateProgressSliders()
     {
-        // All AddListener calls connect buttons to methods in code.
-        // No Inspector onClick wiring is needed.
+        if (moduleProgressSliders == null) return;
+        for (int i = 0; i < moduleProgressSliders.Length; i++)
+        {
+            var s = moduleProgressSliders[i];
+            if (s == null)
+            {
+                Debug.LogWarning($"[GameHUD] moduleProgressSliders[{i}] is not assigned. " +
+                                 "Drag the Slider component into this element.");
+                continue;
+            }
+            if (s.minValue != 0f || s.maxValue != 1f)
+            {
+                Debug.LogWarning($"[GameHUD] Slider [{i}] has Min={s.minValue}, Max={s.maxValue}. " +
+                                 "Set Min=0 and Max=1 in the Slider Inspector for the bar to move.");
+                s.minValue = 0f;
+                s.maxValue = 1f;
+            }
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Wiring
+    // ─────────────────────────────────────────────────────────────────────────
+
+    private void WirePauseButtons()
+    {
         resumeButton?.onClick.AddListener(ResumeGame);
         saveButton?.onClick.AddListener(() => SaveManager.Instance?.Save());
         loadButton?.onClick.AddListener(() => SaveManager.Instance?.Load());
@@ -177,24 +150,12 @@ public class GameHUD : MonoBehaviour
     private void WireOptionsPanel()
     {
         optionsBackButton?.onClick.AddListener(CloseOptions);
+        masterVolumeSlider?.onValueChanged.AddListener(v => AudioManager.Instance?.SetMasterVolume(v));
+        musicVolumeSlider?.onValueChanged.AddListener(v  => AudioManager.Instance?.SetMusicVolume(v));
+        sfxVolumeSlider?.onValueChanged.AddListener(v    => AudioManager.Instance?.SetSFXVolume(v));
+        musicToggle?.onValueChanged.AddListener(b        => AudioManager.Instance?.ToggleMusic(b));
+        sfxToggle?.onValueChanged.AddListener(b          => AudioManager.Instance?.ToggleSFX(b));
 
-        // Sliders — AddListener fires whenever the slider value changes
-        masterVolumeSlider?.onValueChanged.AddListener(v =>
-            AudioManager.Instance?.SetMasterVolume(v));
-
-        musicVolumeSlider?.onValueChanged.AddListener(v =>
-            AudioManager.Instance?.SetMusicVolume(v));
-
-        sfxVolumeSlider?.onValueChanged.AddListener(v =>
-            AudioManager.Instance?.SetSFXVolume(v));
-
-        musicToggle?.onValueChanged.AddListener(b =>
-            AudioManager.Instance?.ToggleMusic(b));
-
-        sfxToggle?.onValueChanged.AddListener(b =>
-            AudioManager.Instance?.ToggleSFX(b));
-
-        // Initialize sliders to current AudioManager values
         if (AudioManager.Instance != null)
         {
             if (masterVolumeSlider != null) masterVolumeSlider.value = AudioManager.Instance.MasterVolume;
@@ -210,29 +171,19 @@ public class GameHUD : MonoBehaviour
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Public Methods — called by GameManager (code wiring) or directly
+    // Public API
     // ─────────────────────────────────────────────────────────────────────────
 
-    /// <summary>
-    /// Updates the oxygen slider and fill color.
-    /// GameManager wires: oxygenSystem.onOxygenChanged → gameHUD.UpdateOxygen
-    /// </summary>
     public void UpdateOxygen(float normalized)
     {
         if (oxygenSlider    != null) oxygenSlider.value = normalized;
         if (oxygenLabel     != null) oxygenLabel.text   = $"{Mathf.RoundToInt(normalized * 100f)}%";
         if (oxygenFillImage != null)
-        {
-            oxygenFillImage.color = normalized > oxygenWarningLevel  ? oxygenColorNormal   :
-                                    normalized > oxygenCriticalLevel ? oxygenColorWarning  :
-                                                                        oxygenColorCritical;
-        }
+            oxygenFillImage.color = normalized > oxygenWarningLevel  ? oxygenColorNormal
+                                  : normalized > oxygenCriticalLevel ? oxygenColorWarning
+                                                                     : oxygenColorCritical;
     }
 
-    /// <summary>
-    /// Updates the gravity state icon and text label.
-    /// Called directly from PlayerController — no wiring needed.
-    /// </summary>
     public void SetGravityState(GravityState state)
     {
         string[] names = { "Normal-G", "Zero-G", "Micro-Pull", "GRAVITY RIFT!" };
@@ -244,51 +195,73 @@ public class GameHUD : MonoBehaviour
     }
 
     /// <summary>
-    /// Updates the zone badge color and name.
-    /// Called directly from ZoneTrigger — no wiring needed.
+    /// Updates the zone badge color and name text.
+    /// Colors are set in the Inspector (zone1Color / zone2Color / zone3Color).
     /// </summary>
     public void SetZone(int zoneNumber, string zoneName)
     {
-        if (zoneNameText   != null) zoneNameText.text = zoneName;
+        if (zoneNameText != null) zoneNameText.text = zoneName;
         if (zoneBadgeImage != null)
+        {
             zoneBadgeImage.color = zoneNumber switch
             {
-                1 => zone1Color, 2 => zone2Color, 3 => zone3Color, _ => Color.white
+                1 => zone1Color,
+                2 => zone2Color,
+                3 => zone3Color,
+                _ => defaultZoneColor
             };
+        }
     }
 
     /// <summary>
-    /// Updates a module's progress slider by index.
-    /// GameManager wires each ShipModule.onProgressChanged to this.
+    /// Updates a module's progress bar.
+    /// GameManager wires ShipModule.onProgressChanged to this.
+    ///
+    /// If the bar does not move: check that the Slider's Min=0 and Max=1
+    /// in the Inspector. The ValidateProgressSliders() call at Start() also
+    /// auto-corrects this and logs a warning.
     /// </summary>
     public void UpdateModuleProgress(int moduleIndex, float progress)
     {
-        if (moduleProgressSliders == null) return;
-        if (moduleIndex < 0 || moduleIndex >= moduleProgressSliders.Length) return;
-        if (moduleProgressSliders[moduleIndex] != null)
-            moduleProgressSliders[moduleIndex].value = progress;
+        if (moduleProgressSliders == null || moduleProgressSliders.Length == 0)
+        {
+            Debug.LogWarning("[GameHUD] moduleProgressSliders array is empty. " +
+                             "Assign the slider components in the Inspector.");
+            return;
+        }
+        if (moduleIndex < 0 || moduleIndex >= moduleProgressSliders.Length)
+        {
+            Debug.LogWarning($"[GameHUD] UpdateModuleProgress: index {moduleIndex} out of range " +
+                             $"(array length {moduleProgressSliders.Length}).");
+            return;
+        }
+        var slider = moduleProgressSliders[moduleIndex];
+        if (slider == null)
+        {
+            Debug.LogWarning($"[GameHUD] moduleProgressSliders[{moduleIndex}] is null. " +
+                             "Drag the Slider into this array element in the Inspector.");
+            return;
+        }
+        slider.value = progress;
+        Debug.Log($"[GameHUD] Module {moduleIndex} progress set to {progress:P0}");
+
+        if (moduleProgressLabels != null && moduleIndex < moduleProgressLabels.Length
+            && moduleProgressLabels[moduleIndex] != null)
+            moduleProgressLabels[moduleIndex].text = $"{Mathf.RoundToInt(progress * 100f)}%";
     }
 
-    // Individual wrappers for direct Inspector wiring if preferred
+    // Convenience wrappers
     public void UpdateLifeSupportProgress(float p) => UpdateModuleProgress(0, p);
     public void UpdateHullProgress(float p)         => UpdateModuleProgress(1, p);
     public void UpdateNavProgress(float p)          => UpdateModuleProgress(2, p);
     public void UpdateEngineProgress(float p)       => UpdateModuleProgress(3, p);
 
-    /// <summary>
-    /// Displays the Game Over panel.
-    /// GameManager wires: oxygenSystem.onOxygenDepleted → gameHUD.ShowGameOver
-    /// </summary>
     public void ShowGameOver()
     {
         Time.timeScale = 0f;
         gameOverPanel?.SetActive(true);
     }
 
-    /// <summary>
-    /// Returns to the Main Menu scene.
-    /// Wired in code to the exit and gameOverReturn buttons.
-    /// </summary>
     public void ExitToMainMenu()
     {
         Time.timeScale = 1f;
@@ -296,7 +269,7 @@ public class GameHUD : MonoBehaviour
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Pause Menu
+    // Pause
     // ─────────────────────────────────────────────────────────────────────────
 
     private void TogglePause()
@@ -313,21 +286,8 @@ public class GameHUD : MonoBehaviour
         Time.timeScale = 1f;
     }
 
-    private void OpenOptions()
-    {
-        pausePanel?.SetActive(false);
-        optionsPanel?.SetActive(true);
-    }
-
-    private void CloseOptions()
-    {
-        optionsPanel?.SetActive(false);
-        pausePanel?.SetActive(true);
-    }
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // Game Over
-    // ─────────────────────────────────────────────────────────────────────────
+    private void OpenOptions()  { pausePanel?.SetActive(false); optionsPanel?.SetActive(true); }
+    private void CloseOptions() { optionsPanel?.SetActive(false); pausePanel?.SetActive(true); }
 
     private void RetryFromSave()
     {

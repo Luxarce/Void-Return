@@ -1,73 +1,84 @@
 using UnityEngine;
 
 /// <summary>
-/// Marks a named zone region and updates the GameHUD zone badge
-/// when the player enters or exits this area.
+/// Marks a named zone region.
+/// On player entry: updates the HUD zone badge (color changes per zone)
+/// and shows an informational notification about the zone.
 ///
-/// Attach to the same GameObject as a Trigger Collider2D that defines the zone boundary.
-/// This can be on the same object as GravityZone, or a separate overlay object.
+/// ZONE COLORS:
+///   Zone 1 (Debris Field)  — Green/teal
+///   Zone 2 (Drift Ring)    — Yellow/amber
+///   Zone 3 (Deep Scatter)  — Red/orange
 ///
-/// Set the zoneNumber and zoneName in the Inspector to match the zone design:
-///   Zone 1 — Debris Field (safest, green)
-///   Zone 2 — Drift Ring (medium, yellow)
-///   Zone 3 — Deep Scatter (dangerous, red)
+/// The GameHUD.SetZone() call passes the zone number so the badge image color
+/// changes automatically based on the zone1Color / zone2Color / zone3Color fields.
 /// </summary>
 [RequireComponent(typeof(Collider2D))]
 public class ZoneTrigger : MonoBehaviour
 {
-    // ─────────────────────────────────────────────────────────────────────────
-    // Inspector Fields
-    // ─────────────────────────────────────────────────────────────────────────
-
     [Header("Zone Identity")]
-    [Tooltip("Zone number used to select the badge color in GameHUD. (1 = safe, 2 = medium, 3 = dangerous)")]
-    [Range(1, 3)]
+    [Tooltip("Zone number: 1 = Debris Field, 2 = Drift Ring, 3 = Deep Scatter.")]
     public int zoneNumber = 1;
 
-    [Tooltip("Display name shown on the zone badge in the HUD (e.g., 'Debris Field').")]
+    [Tooltip("Zone display name shown on the HUD badge.")]
     public string zoneName = "Debris Field";
 
     [Header("Entry Notification")]
-    [Tooltip("Show a notification message when the player enters this zone.")]
-    public bool showEntryNotification = true;
+    [Tooltip("Show an informational notification when the player enters this zone.")]
+    public bool showNotificationOnEnter = true;
 
-    [Tooltip("Custom notification text shown on zone entry. Leave blank to use the zone name.")]
-    public string entryMessage = "";
+    [Tooltip("Custom notification text. Leave blank to use the auto-generated zone description.")]
+    [TextArea(2, 4)]
+    public string customEntryMessage = "";
 
     [Header("Default Zone")]
-    [Tooltip("If true, the GameHUD will be initialized to this zone on Start. " +
-             "Enable only on the Zone 1 object (the starting zone).")]
+    [Tooltip("If true, this zone's badge is shown at Start. " +
+             "Enable only on the Zone 1 trigger (the player starts here).")]
     public bool isDefaultZone = false;
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Unity Lifecycle
+
+    private static readonly string[] ZoneDescriptions =
+    {
+        "",  // index 0 unused
+        "Zone 1: Debris Field\nCommon materials nearby. Watch for incoming meteorites.",
+        "Zone 2: Drift Ring\nMicroPull currents active. Mid-tier materials ahead.",
+        "Zone 3: Deep Scatter\nGravity Rifts detected. Rare materials — high danger.",
+    };
+
     // ─────────────────────────────────────────────────────────────────────────
+
+    private void Awake()
+    {
+        GetComponent<Collider2D>().isTrigger = true;
+    }
 
     private void Start()
     {
-        GetComponent<Collider2D>().isTrigger = true;
-
         if (isDefaultZone)
             FindFirstObjectByType<GameHUD>()?.SetZone(zoneNumber, zoneName);
     }
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // Trigger Events
-    // ─────────────────────────────────────────────────────────────────────────
 
     private void OnTriggerEnter2D(Collider2D other)
     {
         if (!other.CompareTag("Player")) return;
 
+        // Update the HUD zone badge (color + name)
         FindFirstObjectByType<GameHUD>()?.SetZone(zoneNumber, zoneName);
 
-        if (showEntryNotification)
-        {
-            string msg = string.IsNullOrEmpty(entryMessage)
-                ? $"Entering Zone {zoneNumber}: {zoneName}"
-                : entryMessage;
+        if (!showNotificationOnEnter) return;
 
-            NotificationManager.Instance?.Show(msg, urgent: zoneNumber >= 3);
-        }
+        // Build or use the custom entry message
+        string msg = customEntryMessage != ""
+            ? customEntryMessage
+            : (zoneNumber < ZoneDescriptions.Length
+                ? ZoneDescriptions[zoneNumber]
+                : $"Entering Zone {zoneNumber}: {zoneName}");
+
+        // Zone 3 entry is shown as a warning, others as info
+        if (zoneNumber >= 3)
+            NotificationManager.Instance?.ShowWarning(msg);
+        else
+            NotificationManager.Instance?.ShowInfo(msg);
     }
 }

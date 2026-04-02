@@ -1,81 +1,137 @@
 using UnityEngine;
 
 /// <summary>
-/// Defines the gravity state type for a zone.
+/// Gravity zone types and their behaviors:
+///
+///  ZeroG      — slowly PUSHES the player away from the zone center.
+///               Simulates an outward repulsion field.
+///
+///  MicroPull  — slowly PULLS the player toward the zone center.
+///               Light attraction — player can still move freely.
+///
+///  GravityRift— strongly PULLS the player inward AND spins them.
+///               Pull is strong but not inescapable — player can slowly fight out.
+///
+///  Normal     — applies directional gravity (like a floor).
+///               Used near debris/asteroid surfaces for walking.
 /// </summary>
-[System.Serializable]
-public enum GravityState
-{
-    Normal,
-    ZeroG,
-    MicroPull,
-    GravityRift
-}
+public enum GravityState { Normal, ZeroG, MicroPull, GravityRift }
 
-/// <summary>
-/// Attach to any GameObject with a Trigger Collider2D to define a gravity zone.
-/// The zone applies a custom gravity force and state to the PlayerController when inside.
-/// </summary>
 [RequireComponent(typeof(Collider2D))]
 public class GravityZone : MonoBehaviour
 {
-    [Header("Gravity Settings")]
-    [Tooltip("The type of gravity this zone applies to the player.")]
+    [Header("Zone Type")]
     public GravityState gravityType = GravityState.ZeroG;
 
-    [Tooltip("Strength of the gravity pull. Positive = pull in gravity direction, Negative = push away.")]
-    [Range(-30f, 30f)]
+    [Header("Normal Zone Settings (applies only when gravityType = Normal)")]
+    [Tooltip("Direction of gravity for Normal zones (e.g., toward a floor surface).")]
+    public Vector2 gravityDirection  = Vector2.down;
+
+    [Tooltip("Strength of the Normal gravity force per FixedUpdate.")]
+    [Range(0f, 30f)]
     public float gravityStrength = 9.8f;
 
-    [Tooltip("Direction of the gravitational pull. Will be normalized automatically.")]
-    public Vector2 gravityDirection = Vector2.down;
+    [Header("ZeroG Zone Settings")]
+    [Tooltip("How strongly the ZeroG zone pushes the player away from its center.")]
+    [Range(0f, 20f)]
+    public float zeroGPushStrength = 2f;
 
-    [Tooltip("If true, the player will be spun/disoriented while in this zone (for Rift zones).")]
-    public bool causesDisorientation = false;
+    [Header("MicroPull Zone Settings")]
+    [Tooltip("How strongly the MicroPull zone pulls the player toward its center.")]
+    [Range(0f, 20f)]
+    public float microPullStrength = 3f;
 
-    [Tooltip("Degrees per second the player spins when disoriented. Only active if causesDisorientation is true.")]
+    [Header("Rift Zone Settings")]
+    [Tooltip("How strongly the Gravity Rift pulls the player inward. " +
+             "Keep below the player's maximum thrust force so they can escape slowly.")]
+    [Range(0f, 30f)]
+    public float riftPullStrength   = 12f;
+
+    [Tooltip("Degrees per second the player spins inside a Gravity Rift.")]
     [Range(0f, 360f)]
-    public float riftSpinForce = 180f;
+    public float riftSpinForce = 120f;
 
-    [Header("Visual (Scene View)")]
-    [Tooltip("Color of the gizmo boundary drawn in the Scene view. Use to distinguish zone types visually.")]
+    [Tooltip("If true, the player receives the disoriented animation state inside a rift.")]
+    public bool causesDisorientation = true;
+
+    [Header("Scene View Gizmo")]
+    [Tooltip("Color of the zone boundary in the Scene view.")]
     public Color zoneGizmoColor = new Color(0f, 0.8f, 1f, 0.25f);
+
+    // ─────────────────────────────────────────────────────────────────────────
+
+    private void Awake()
+    {
+        GetComponent<Collider2D>().isTrigger = true;
+    }
 
     private void OnTriggerStay2D(Collider2D other)
     {
         if (!other.TryGetComponent<PlayerController>(out var pc)) return;
 
-        pc.ApplyZoneGravity(
-            gravityType,
-            gravityDirection.normalized * gravityStrength,
-            causesDisorientation,
-            riftSpinForce
-        );
+        Vector2 forceVector;
+        bool    disorient = false;
+        float   spin      = 0f;
+
+        switch (gravityType)
+        {
+            case GravityState.Normal:
+                // Standard directional gravity toward a surface
+                forceVector = gravityDirection.normalized * gravityStrength;
+                break;
+
+            case GravityState.ZeroG:
+                // Push the player AWAY from the zone center (repulsion)
+                Vector2 awayDir = ((Vector2)other.transform.position
+                                  - (Vector2)transform.position);
+                if (awayDir.sqrMagnitude < 0.01f) awayDir = Vector2.up;
+                forceVector = awayDir.normalized * zeroGPushStrength;
+                break;
+
+            case GravityState.MicroPull:
+                // Pull the player gently TOWARD the zone center
+                Vector2 toCenter = ((Vector2)transform.position
+                                   - (Vector2)other.transform.position);
+                if (toCenter.sqrMagnitude < 0.01f) { forceVector = Vector2.zero; break; }
+                forceVector = toCenter.normalized * microPullStrength;
+                break;
+
+            case GravityState.GravityRift:
+                // Strong inward pull + spin — player can still escape with effort
+                Vector2 toCenterRift = ((Vector2)transform.position
+                                       - (Vector2)other.transform.position);
+                if (toCenterRift.sqrMagnitude < 0.01f) { forceVector = Vector2.zero; break; }
+                forceVector = toCenterRift.normalized * riftPullStrength;
+                disorient   = causesDisorientation;
+                spin        = riftSpinForce;
+                break;
+
+            default:
+                forceVector = Vector2.zero;
+                break;
+        }
+
+        pc.ApplyZoneGravity(gravityType, forceVector, disorient, spin);
     }
 
     private void OnTriggerExit2D(Collider2D other)
     {
         if (!other.TryGetComponent<PlayerController>(out var pc)) return;
-
-        // When leaving, reset to Zero-G (open space default)
+        // Reset to open-space default on exit
         pc.ApplyZoneGravity(GravityState.ZeroG, Vector2.zero, false, 0f);
     }
+
+    // ─────────────────────────────────────────────────────────────────────────
 
     private void OnDrawGizmos()
     {
         Gizmos.color = zoneGizmoColor;
-
-        var circle = GetComponent<CircleCollider2D>();
-        if (circle != null)
-        {
-            Gizmos.DrawWireSphere(transform.position + (Vector3)(Vector2)circle.offset, circle.radius);
-            return;
-        }
-
-        var box = GetComponent<BoxCollider2D>();
-        if (box != null)
-        {
-            Gizmos.DrawWireCube(transform.position + (Vector3)(Vector2)box.offset, box.size);
-        }
+        var col = GetComponent<Collider2D>();
+        if (col is CircleCollider2D cc)
+            Gizmos.DrawWireSphere(transform.position, cc.radius * transform.lossyScale.x);
+        else if (col is BoxCollider2D bc)
+            Gizmos.DrawWireCube(transform.position,
+                new Vector3(bc.size.x * transform.lossyScale.x,
+                            bc.size.y * transform.lossyScale.y, 0f));
     }
 }

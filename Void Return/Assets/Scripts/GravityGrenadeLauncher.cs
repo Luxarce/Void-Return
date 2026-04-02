@@ -1,62 +1,58 @@
 using UnityEngine;
 
 /// <summary>
-/// Gravity Grenade Launcher — launches a grenade that creates a temporary gravity pull zone.
-/// Manages grenade inventory count and communicates with the HUD.
-/// Place this script on a child GameObject under the Player.
+/// Gravity Grenade Launcher — launches grenades and supports crafting new ones from materials.
+///
+/// CRAFT SYSTEM:
+///  Press the craft key (default: C) while the Grenade gadget is selected
+///  to craft one grenade using craftMaterialType × craftMaterialCount from inventory.
+///  A notification shows success or what's missing.
 /// </summary>
 public class GravityGrenadeLauncher : MonoBehaviour
 {
-    // ─────────────────────────────────────────────────────────────────────────
-    // Inspector Fields
-    // ─────────────────────────────────────────────────────────────────────────
-
-    [Header("Grenade Settings")]
-    [Tooltip("Prefab for the Gravity Grenade projectile. Must have a GravityGrenade script and Rigidbody2D.")]
+    [Header("Grenade Prefab")]
+    [Tooltip("GravityGrenade prefab to launch.")]
     public GameObject grenadePrefab;
 
-    [Tooltip("Launch speed applied to the grenade in the aim direction.")]
+    [Tooltip("Launch speed in the aim direction.")]
     public float launchSpeed = 12f;
 
-    [Tooltip("Maximum number of grenades the player can carry at once.")]
+    [Tooltip("Maximum grenades the player can carry.")]
     [Range(1, 10)]
     public int maxGrenades = 3;
 
-    [Header("Grenade Explosion Settings (override on prefab defaults)")]
-    [Tooltip("Radius of the gravity pull zone the grenade creates on detonation.")]
-    public float pullRadius = 8f;
+    [Header("Grenade Explosion Settings")]
+    [Tooltip("Pull radius of the detonated grenade zone.")]
+    public float pullRadius    = 8f;
 
-    [Tooltip("Pull force strength applied to objects within radius.")]
-    public float pullStrength = 10f;
+    [Tooltip("Pull force strength.")]
+    public float pullStrength  = 10f;
 
-    [Tooltip("How long the gravity pull zone lasts in seconds.")]
-    public float pullDuration = 5f;
+    [Tooltip("Duration of the pull zone in seconds.")]
+    public float pullDuration  = 5f;
+
+    [Header("Crafting")]
+    [Tooltip("Key to craft one grenade while this gadget is selected.")]
+    public KeyCode craftKey = KeyCode.C;
+
+    [Tooltip("Material type required to craft one grenade.")]
+    public MaterialType craftMaterialType = MaterialType.MetalScrap;
+
+    [Tooltip("How many of that material are consumed to craft one grenade.")]
+    [Range(1, 10)]
+    public int craftMaterialCount = 3;
 
     [Header("Audio")]
-    [Tooltip("AudioSource on this GameObject.")]
     public AudioSource audioSource;
-
-    [Tooltip("Sound played when a grenade is launched.")]
-    public AudioClip launchClip;
-
-    [Tooltip("Sound played when the player tries to launch with no grenades remaining.")]
-    public AudioClip emptyClip;
+    public AudioClip   launchClip;
+    public AudioClip   emptyClip;
+    public AudioClip   craftClip;
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Private State
-    // ─────────────────────────────────────────────────────────────────────────
-
     private int _grenadeCount;
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // Public Properties
-    // ─────────────────────────────────────────────────────────────────────────
-
-    /// <summary>Current number of grenades held by the player.</summary>
     public int GrenadeCount => _grenadeCount;
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // Unity Lifecycle
     // ─────────────────────────────────────────────────────────────────────────
 
     private void Awake()
@@ -69,14 +65,15 @@ public class GravityGrenadeLauncher : MonoBehaviour
         GadgetHUDManager.Instance?.UpdateGrenadeCount(_grenadeCount);
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // Public API
+    private void Update()
+    {
+        // Craft grenade when C is pressed and this gadget is active
+        if (Input.GetKeyDown(craftKey) && gameObject.activeSelf)
+            TryCraftGrenade();
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
 
-    /// <summary>
-    /// Launch a grenade in the given direction.
-    /// Called by PlayerController when gadget 3 is used.
-    /// </summary>
     public void Launch(Vector2 direction)
     {
         if (grenadePrefab == null) return;
@@ -84,36 +81,72 @@ public class GravityGrenadeLauncher : MonoBehaviour
         if (_grenadeCount <= 0)
         {
             audioSource?.PlayOneShot(emptyClip);
-            NotificationManager.Instance?.Show("No grenades remaining!");
+            // Format craft material name
+            string matName = System.Text.RegularExpressions.Regex.Replace(
+                craftMaterialType.ToString(), "(?<=[a-z])(?=[A-Z])", " ");
+            int have = Inventory.Instance?.GetCount(craftMaterialType) ?? 0;
+            NotificationManager.Instance?.ShowInfo(
+                $"No grenades. Press [C] to craft one ({matName} x{craftMaterialCount}, have {have}).");
             return;
         }
 
         _grenadeCount--;
 
-        GameObject grenadeObj = Instantiate(grenadePrefab, transform.position, Quaternion.identity);
+        var obj = Instantiate(grenadePrefab, transform.position, Quaternion.identity);
 
-        // Apply launch velocity
-        if (grenadeObj.TryGetComponent<Rigidbody2D>(out var rb))
+        if (obj.TryGetComponent<Rigidbody2D>(out var rb))
             rb.linearVelocity = direction * launchSpeed;
 
-        // Pass configuration values to the grenade
-        if (grenadeObj.TryGetComponent<GravityGrenade>(out var grenade))
+        if (obj.TryGetComponent<GravityGrenade>(out var gg))
         {
-            grenade.pullRadius   = pullRadius;
-            grenade.pullStrength = pullStrength;
-            grenade.duration     = pullDuration;
+            gg.pullRadius   = pullRadius;
+            gg.pullStrength = pullStrength;
+            gg.duration     = pullDuration;
         }
 
         audioSource?.PlayOneShot(launchClip);
         GadgetHUDManager.Instance?.UpdateGrenadeCount(_grenadeCount);
     }
 
-    /// <summary>
-    /// Add grenades to the player's stock (e.g., from a pickup).
-    /// </summary>
     public void AddGrenades(int amount = 1)
     {
         _grenadeCount = Mathf.Min(_grenadeCount + amount, maxGrenades);
         GadgetHUDManager.Instance?.UpdateGrenadeCount(_grenadeCount);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+
+    private void TryCraftGrenade()
+    {
+        if (_grenadeCount >= maxGrenades)
+        {
+            NotificationManager.Instance?.ShowInfo(
+                $"Grenades full ({maxGrenades}/{maxGrenades}).");
+            return;
+        }
+
+        if (Inventory.Instance == null) return;
+
+        string matName = System.Text.RegularExpressions.Regex.Replace(
+            craftMaterialType.ToString(), "(?<=[a-z])(?=[A-Z])", " ");
+
+        int have = Inventory.Instance.GetCount(craftMaterialType);
+        if (have < craftMaterialCount)
+        {
+            NotificationManager.Instance?.ShowInfo(
+                $"Need {matName} x{craftMaterialCount} to craft a grenade. Have {have}.");
+            return;
+        }
+
+        bool consumed = Inventory.Instance.ConsumeMaterials(
+            craftMaterialType, craftMaterialCount);
+
+        if (!consumed) return;
+
+        _grenadeCount++;
+        audioSource?.PlayOneShot(craftClip);
+        GadgetHUDManager.Instance?.UpdateGrenadeCount(_grenadeCount);
+        NotificationManager.Instance?.ShowInfo(
+            $"Grenade crafted! ({_grenadeCount}/{maxGrenades})");
     }
 }

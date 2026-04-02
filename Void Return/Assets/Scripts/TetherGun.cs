@@ -1,128 +1,143 @@
 using UnityEngine;
 
 /// <summary>
-/// Tether Gun gadget — fires a hook that latches onto debris or surfaces.
-/// Once hooked, it continuously pulls the target object toward the player.
-/// Fire again while hooked to release.
-/// Place this script on a child GameObject under the Player.
-/// Requires: a LineRenderer component on this same GameObject.
+/// Tether Gun — fires a hook that pulls objects or anchors the player.
+///
+/// OPTIMIZATION:
+///  — hookImpactVFX is Instantiated once at hook contact then immediately
+///    scheduled for Destroy(vfx, 3f). The VFX prefab should have
+///    Stop Action = Destroy but we also schedule explicit cleanup.
+///  — LineRenderer is on this child object — no extra GameObjects spawned.
+///  — Release() always cleans up both hook states cleanly.
 /// </summary>
 [RequireComponent(typeof(LineRenderer))]
 public class TetherGun : MonoBehaviour
 {
-    // ─────────────────────────────────────────────────────────────────────────
-    // Inspector Fields
-    // ─────────────────────────────────────────────────────────────────────────
-
     [Header("Tether Settings")]
-    [Tooltip("Maximum range of the tether in world units.")]
-    public float tetherRange = 20f;
-
-    [Tooltip("Force applied to the hooked object per frame, pulling it toward the player.")]
-    public float pullForce = 15f;
-
-    [Tooltip("LayerMask for objects the tether can hook onto (e.g., Debris, Ground layers).")]
+    public float tetherRange         = 20f;
+    public float pullForce           = 15f;
+    public float selfPullForce       = 12f;
     public LayerMask tetherMask;
+    public float autoReleaseDistance = 0.8f;
 
     [Header("Audio")]
-    [Tooltip("AudioSource on this GameObject.")]
     public AudioSource audioSource;
-
-    [Tooltip("Sound when the tether hook fires and connects.")]
-    public AudioClip fireClip;
-
-    [Tooltip("Sound when the tether is released.")]
-    public AudioClip releaseClip;
-
-    [Tooltip("Sound played when hook impact makes contact.")]
-    public AudioClip hookImpactClip;
+    public AudioClip   fireClip;
+    public AudioClip   releaseClip;
+    public AudioClip   hookImpactClip;
+    public AudioClip   missClip;
 
     [Header("VFX")]
-    [Tooltip("Optional particle effect spawned at hook attachment point.")]
+    [Tooltip("VFX spawned at hook contact point. Must have Stop Action = Destroy " +
+             "OR will be explicitly destroyed after vfxLifetime seconds.")]
     public GameObject hookImpactVFX;
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // Private State
-    // ─────────────────────────────────────────────────────────────────────────
+    [Tooltip("Seconds before the hook impact VFX is force-destroyed. " +
+             "Safety net in case Stop Action = Destroy is not set on the prefab.")]
+    public float vfxLifetime = 3f;
 
+    // ─────────────────────────────────────────────────────────────────────────
     private LineRenderer _line;
     private Rigidbody2D  _hookedRigidbody;
+    private Vector2      _hookedPoint;
     private bool         _isHooked;
+    private bool         _isStaticHook;
+    private Rigidbody2D  _playerRb;
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // Unity Lifecycle
     // ─────────────────────────────────────────────────────────────────────────
 
     private void Awake()
     {
-        _line         = GetComponent<LineRenderer>();
-        _line.enabled = false;
+        _line               = GetComponent<LineRenderer>();
+        _line.enabled       = false;
         _line.positionCount = 2;
+
+        _playerRb = GetComponentInParent<Rigidbody2D>();
+
+        if (tetherMask.value == 0)
+            Debug.LogWarning("[TetherGun] tetherMask is Nothing — tether will never connect. " +
+                             "Tick Debris and Ground in the Tether Mask field.");
     }
 
     private void FixedUpdate()
     {
-        if (!_isHooked || _hookedRigidbody == null) return;
+        if (!_isHooked) return;
 
-        // Pull the hooked object toward the player each physics step
-        Vector2 dirToPlayer = (Vector2)transform.position - _hookedRigidbody.position;
-        _hookedRigidbody.AddForce(dirToPlayer.normalized * pullForce);
-
-        // Auto-release if the object is very close
-        if (dirToPlayer.magnitude < 0.5f)
-            Release();
+        if (_isStaticHook)
+        {
+            if (_playerRb == null) return;
+            Vector2 toHook = _hookedPoint - (Vector2)transform.position;
+            if (toHook.magnitude < autoReleaseDistance) { Release(); return; }
+            _playerRb.AddForce(toHook.normalized * selfPullForce, ForceMode2D.Force);
+        }
+        else
+        {
+            if (_hookedRigidbody == null) { Release(); return; }
+            Vector2 toPlayer = (Vector2)transform.position - _hookedRigidbody.position;
+            if (toPlayer.magnitude < autoReleaseDistance) { Release(); return; }
+            _hookedRigidbody.AddForce(toPlayer.normalized * pullForce, ForceMode2D.Force);
+        }
     }
 
     private void LateUpdate()
     {
-        if (!_isHooked || _hookedRigidbody == null) return;
-
-        // Update the tether line visual each frame
+        if (!_isHooked) return;
         _line.SetPosition(0, transform.position);
-        _line.SetPosition(1, _hookedRigidbody.position);
+        _line.SetPosition(1, _isStaticHook
+            ? (Vector3)(Vector2)_hookedPoint
+            : (Vector3)_hookedRigidbody.position);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Public API
-    // ─────────────────────────────────────────────────────────────────────────
 
-    /// <summary>
-    /// Fire the tether in the given direction. If already hooked, releases instead.
-    /// Called by PlayerController when gadget 2 is used.
-    /// </summary>
     public void Fire(Vector2 direction)
     {
-        if (_isHooked)
+        if (_isHooked) { Release(); return; }
+
+        if (tetherMask.value == 0)
         {
-            Release();
+            NotificationManager.Instance?.ShowInfo(
+                "Tether failed — no target layers set. Check Inspector.");
             return;
         }
 
-        RaycastHit2D hit = Physics2D.Raycast(transform.position, direction, tetherRange, tetherMask);
+        RaycastHit2D hit = Physics2D.Raycast(
+            transform.position, direction, tetherRange, tetherMask);
 
-        if (hit.collider == null) return;
+        if (hit.collider == null)
+        {
+            audioSource?.PlayOneShot(missClip);
+            return;
+        }
 
-        // Attach to a Rigidbody2D if present (debris), otherwise tether to a static surface
-        if (hit.rigidbody != null)
+        _isHooked     = true;
+        _line.enabled = true;
+        audioSource?.PlayOneShot(fireClip);
+        audioSource?.PlayOneShot(hookImpactClip);
+
+        // Spawn VFX with guaranteed cleanup
+        if (hookImpactVFX != null)
+        {
+            var vfx = Instantiate(hookImpactVFX, hit.point, Quaternion.identity);
+            Destroy(vfx, vfxLifetime); // always destroy, even if Stop Action = Destroy fails
+        }
+
+        if (hit.rigidbody != null && hit.rigidbody.bodyType == RigidbodyType2D.Dynamic)
         {
             _hookedRigidbody = hit.rigidbody;
-            _isHooked        = true;
-            _line.enabled    = true;
-
-            if (hookImpactVFX != null)
-                Instantiate(hookImpactVFX, hit.point, Quaternion.identity);
-
-            audioSource?.PlayOneShot(fireClip);
-            audioSource?.PlayOneShot(hookImpactClip);
+            _isStaticHook    = false;
+        }
+        else
+        {
+            _hookedPoint  = hit.point;
+            _isStaticHook = true;
         }
     }
 
-    /// <summary>
-    /// Releases the tether hook.
-    /// </summary>
     public void Release()
     {
         _isHooked        = false;
+        _isStaticHook    = false;
         _hookedRigidbody = null;
         _line.enabled    = false;
         audioSource?.PlayOneShot(releaseClip);

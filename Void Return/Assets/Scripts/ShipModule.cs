@@ -2,232 +2,331 @@ using UnityEngine;
 using System.Collections.Generic;
 using UnityEngine.Events;
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Supporting Data Types
-// ─────────────────────────────────────────────────────────────────────────────
+public enum ModuleType { LifeSupport, HullPlating, Navigation, EngineCore }
 
-/// <summary>
-/// Identifies which of the four spacecraft modules this is.
-/// </summary>
-public enum ModuleType
-{
-    LifeSupport,
-    HullPlating,
-    Navigation,
-    EngineCore
-}
-
-/// <summary>
-/// A single material cost entry for a repair stage.
-/// Configure the type and required amount in the Inspector.
-/// </summary>
 [System.Serializable]
 public class RepairRequirement
 {
-    [Tooltip("Which material type is required.")]
     public MaterialType materialType;
-
-    [Tooltip("How many units of that material are needed.")]
-    [Range(1, 20)]
-    public int required = 2;
+    [Range(1, 20)] public int required = 2;
 }
 
-/// <summary>
-/// One repair stage within a module. A module can have multiple stages.
-/// Each stage has its own material cost and completion weight.
-/// </summary>
 [System.Serializable]
 public class RepairStage
 {
-    [Tooltip("Display name for this stage (e.g., 'Patch Wiring', 'Seal Hull').")]
     public string stageName = "Stage";
-
-    [Tooltip("List of materials required to complete this stage.")]
     public List<RepairRequirement> requirements = new();
-
-    [Tooltip("How much this stage contributes to the module's overall progress (0 to 1). All stages should sum to 1.")]
-    [Range(0f, 1f)]
-    public float completionFraction = 0.5f;
-
-    [HideInInspector]
-    public bool isComplete = false;
+    [Range(0f, 1f)] public float completionFraction = 0.5f;
+    [HideInInspector] public bool isComplete = false;
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// ShipModule
-// ─────────────────────────────────────────────────────────────────────────────
 
 /// <summary>
 /// Manages the repair state of one spacecraft module.
-/// Configure all stages and material requirements in the Inspector.
-/// Attach to each module's GameObject alongside a ProximityInteraction script.
+///
+/// FIXES / ADDITIONS:
+///  — Repair now works reliably. AttemptRepair() is wired via ProximityInteraction
+///    which calls it directly (no UnityEvent chain needed).
+///  — Hull Plating and Engine Core grant special bonuses after STAGE 1 completion
+///    (not after full repair). Bonus info is shown in the proximity hover prompt.
+///  — GetProximityPrompt() now includes Stage 1 bonus descriptions so players
+///    know what they unlock as they repair.
+///  — Thruster refill from Engine Core is blocked until stage 1 is complete.
 /// </summary>
 public class ShipModule : MonoBehaviour
 {
-    // ─────────────────────────────────────────────────────────────────────────
-    // Inspector Fields
-    // ─────────────────────────────────────────────────────────────────────────
-
     [Header("Module Identity")]
-    [Tooltip("Display name for notifications and HUD (e.g., 'Life Support').")]
-    public string moduleName = "Life Support";
-
-    [Tooltip("Which module type this is. Must match the correct slot in ShipRepairManager.")]
+    public string     moduleName = "Life Support";
     public ModuleType moduleType;
 
     [Header("Repair Stages")]
-    [Tooltip("Define each stage of repair. Add one element per stage needed to fully repair this module.")]
     public List<RepairStage> stages = new();
 
     [Header("VFX")]
-    [Tooltip("Particle system that plays during active repair (sparks, welding).")]
     public ParticleSystem repairParticles;
-
-    [Tooltip("Particle system that plays when the module is fully repaired.")]
     public ParticleSystem completionParticles;
 
     [Header("Audio")]
-    [Tooltip("AudioSource on this GameObject.")]
     public AudioSource audioSource;
+    public AudioClip   repairClip;
+    public AudioClip   completionClip;
 
-    [Tooltip("Sound played when a repair stage completes.")]
-    public AudioClip repairClip;
-
-    [Tooltip("Sound played when the module is fully repaired.")]
-    public AudioClip completionClip;
-
-    [Header("Events — Wire These in the Inspector")]
-    [Tooltip("Fired when all stages are complete and the module is fully repaired.")]
-    public UnityEvent onModuleRepaired;
-
-    [Tooltip("Fired every time a stage completes, passing the new progress value (0–1).")]
+    [Header("Events")]
+    public UnityEvent        onModuleRepaired;
     public UnityEvent<float> onProgressChanged;
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Private State
-    // ─────────────────────────────────────────────────────────────────────────
-
     private int  _currentStageIndex;
     private bool _isFullyRepaired;
+    private bool _readyNotificationShown;
+    private bool _stage1BonusApplied;
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Public Properties
-    // ─────────────────────────────────────────────────────────────────────────
+    public bool  IsFullyRepaired   => _isFullyRepaired;
+    public int   CurrentStageIndex => _currentStageIndex;
+    public bool  Stage1Complete    => _currentStageIndex > 0 || _isFullyRepaired;
 
-    /// <summary>True when all repair stages have been completed.</summary>
-    public bool IsFullyRepaired => _isFullyRepaired;
-
-    /// <summary>The index of the current unfinished repair stage. Used by SaveManager.</summary>
-    public int CurrentStageIndex => _currentStageIndex;
-
-    /// <summary>
-    /// Overall repair progress from 0 to 1, based on completed stage fractions.
-    /// </summary>
     public float Progress
     {
         get
         {
-            float total = 0f;
-            foreach (var stage in stages)
-                if (stage.isComplete)
-                    total += stage.completionFraction;
-            return Mathf.Clamp01(total);
+            float t = 0f;
+            if (stages != null)
+                foreach (var s in stages)
+                    if (s.isComplete) t += s.completionFraction;
+            return Mathf.Clamp01(t);
         }
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Public API
+
+    private void Start()
+    {
+        if (Inventory.Instance != null)
+            Inventory.Instance.OnInventoryChanged += CheckAndNotifyReady;
+    }
+
+    private void OnDestroy()
+    {
+        if (Inventory.Instance != null)
+            Inventory.Instance.OnInventoryChanged -= CheckAndNotifyReady;
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
 
-    /// <summary>
-    /// Returns true if the current stage's material requirements are met in the Inventory.
-    /// </summary>
     public bool CanRepairCurrentStage()
     {
-        if (_isFullyRepaired || _currentStageIndex >= stages.Count) return false;
-
-        var stage = stages[_currentStageIndex];
-        foreach (var req in stage.requirements)
-        {
-            if (!Inventory.Instance.HasMaterials(req.materialType, req.required))
-                return false;
-        }
+        if (_isFullyRepaired || stages == null || stages.Count == 0) return false;
+        if (_currentStageIndex >= stages.Count)                       return false;
+        if (Inventory.Instance == null)                               return false;
+        foreach (var req in stages[_currentStageIndex].requirements)
+            if (!Inventory.Instance.HasMaterials(req.materialType, req.required)) return false;
         return true;
     }
 
-    /// <summary>
-    /// Attempts to complete the current repair stage.
-    /// Called by ProximityInteraction when the player presses the interact key.
-    /// Consumes required materials and advances the stage.
-    /// </summary>
+    // ─────────────────────────────────────────────────────────────────────────
+    // MAIN REPAIR METHOD — called directly by ProximityInteraction.cs
+    // ─────────────────────────────────────────────────────────────────────────
+
     public void AttemptRepair()
     {
+        if (_isFullyRepaired)
+        {
+            string bonus = GetSpecialBonusText();
+            NotificationManager.Instance?.ShowInfo(
+                $"{moduleName} is fully repaired." + (bonus != "" ? $"\n{bonus}" : ""));
+            return;
+        }
+        if (stages == null || stages.Count == 0)
+        {
+            Debug.LogError($"[ShipModule:{moduleName}] No stages in Inspector. " +
+                           "Add repair stages in the ShipModule component.");
+            NotificationManager.Instance?.ShowInfo(
+                $"{moduleName}: No repair data configured.");
+            return;
+        }
+        if (Inventory.Instance == null)
+        {
+            Debug.LogError("[ShipModule] Inventory.Instance is null.");
+            return;
+        }
         if (!CanRepairCurrentStage())
         {
-            string missing = GetMissingMaterialsSummary();
-            NotificationManager.Instance?.Show($"Missing materials:\n{missing}", urgent: false);
+            NotificationManager.Instance?.ShowInfo(
+                $"{moduleName} — Stage {_currentStageIndex + 1}\n" +
+                $"Need:\n{BuildMissingText()}");
             return;
         }
 
+        // Consume materials
         var stage = stages[_currentStageIndex];
-
-        // Consume all required materials
         foreach (var req in stage.requirements)
-            Inventory.Instance.ConsumeMaterials(req.materialType, req.required);
+        {
+            if (!Inventory.Instance.ConsumeMaterials(req.materialType, req.required))
+            {
+                Debug.LogError($"[ShipModule:{moduleName}] Consume failed mid-repair. " +
+                               "This should not happen after CanRepair check.");
+                return;
+            }
+        }
 
         stage.isComplete = true;
         _currentStageIndex++;
+        _readyNotificationShown = false;
+
+        // Apply stage 1 bonuses for Hull Plating and Engine Core
+        if (_currentStageIndex == 1 && !_stage1BonusApplied)
+            ApplyStage1Bonus();
 
         repairParticles?.Play();
         audioSource?.PlayOneShot(repairClip);
         onProgressChanged?.Invoke(Progress);
 
-        // Check for full completion
+        Debug.Log($"[ShipModule:{moduleName}] Stage {_currentStageIndex} complete. " +
+                  $"Progress: {Progress:P0}");
+
         if (_currentStageIndex >= stages.Count)
         {
             _isFullyRepaired = true;
             completionParticles?.Play();
             audioSource?.PlayOneShot(completionClip);
+            NotificationManager.Instance?.ShowInfo($"{moduleName.ToUpper()} FULLY REPAIRED!");
             onModuleRepaired?.Invoke();
             ShipRepairManager.Instance?.OnModuleRepaired(moduleType);
         }
         else
         {
-            NotificationManager.Instance?.Show($"{moduleName} — Stage {_currentStageIndex} complete!");
+            NotificationManager.Instance?.ShowInfo(
+                $"{moduleName} — Stage {_currentStageIndex} complete!\n" +
+                $"Next: {stages[_currentStageIndex].stageName}");
         }
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Private Helpers
+    // Stage 1 Bonuses (Hull Plating and Engine Core)
     // ─────────────────────────────────────────────────────────────────────────
 
-    private string GetMissingMaterialsSummary()
+    private void ApplyStage1Bonus()
     {
-        if (_currentStageIndex >= stages.Count) return "None";
+        _stage1BonusApplied = true;
 
+        switch (moduleType)
+        {
+            case ModuleType.HullPlating:
+                // Hull Plating Stage 1: unlock grenade crafting
+                var grenadeGun = FindFirstObjectByType<GravityGrenadeLauncher>();
+                if (grenadeGun != null)
+                {
+                    grenadeGun.gameObject.SetActive(true);
+                    GadgetHUDManager.Instance?.SetGadgetAvailable(2, true);
+                }
+                NotificationManager.Instance?.ShowInfo(
+                    "Hull Plating Stage 1 complete!\nGravity Grenade now available.\n" +
+                    "Press [C] while holding grenade to craft more.");
+                break;
+
+            case ModuleType.EngineCore:
+                // Engine Core Stage 1: enable thruster refill at this module
+                NotificationManager.Instance?.ShowInfo(
+                    "Engine Core Stage 1 complete!\nThruster fuel can now be refilled " +
+                    "here.\nApproach and press [E] to refuel.");
+                break;
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Proximity Prompt — called by ProximityInteraction
+    // ─────────────────────────────────────────────────────────────────────────
+
+    public string GetProximityPrompt()
+    {
+        if (stages == null || stages.Count == 0)
+            return $"{moduleName}\nNo repair data configured.";
+
+        string bonus = GetSpecialBonusText();
+        string bonusLine = bonus != "" ? $"\n{bonus}" : "";
+
+        if (_isFullyRepaired)
+            return $"{moduleName} — [DONE] Fully repaired{bonusLine}";
+
+        if (CanRepairCurrentStage())
+            return $"{moduleName} — Stage {_currentStageIndex + 1}\n" +
+                   $"Press [E] to repair  [READY]{bonusLine}";
+
+        return $"{moduleName} — Stage {_currentStageIndex + 1}\n" +
+               $"Press [E] to check materials{bonusLine}";
+    }
+
+    private string GetSpecialBonusText()
+    {
+        switch (moduleType)
+        {
+            case ModuleType.HullPlating:
+                if (!Stage1Complete)
+                    return "[Stage 1 unlock] Enables Gravity Grenade crafting";
+                if (!_isFullyRepaired)
+                    return "[Full repair] Grenade capacity upgraded";
+                return "Grenade crafting: press [C] with grenade selected";
+
+            case ModuleType.EngineCore:
+                if (!Stage1Complete)
+                    return "[Stage 1 unlock] Enables Thruster fuel refill here";
+                if (!_isFullyRepaired)
+                    return "[Full repair] Thruster Pack unlocked";
+                return "Press [E] here to refuel Thruster";
+
+            default:
+                return "";
+        }
+    }
+
+    // Called by ProximityInteraction when the player is nearby (not yet pressing E)
+    public void OnPlayerProximityEnter()
+    {
+        // Show thruster refill option for Engine Core if stage 1 is done
+        if (moduleType == ModuleType.EngineCore && Stage1Complete && !_isFullyRepaired)
+        {
+            var thruster = FindFirstObjectByType<ThrusterPack>();
+            if (thruster != null && thruster.FuelNormalized < 1f)
+                NotificationManager.Instance?.ShowInfo(
+                    $"{moduleName}: Press [E] to refuel Thruster " +
+                    $"({thruster.FuelNormalized * 100f:F0}% fuel)\n" +
+                    "OR press [E] to continue repairs.");
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Thruster Refill (Engine Core interaction when stage 1 done)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    public void RefuelThrusterFromEngineCore()
+    {
+        if (moduleType != ModuleType.EngineCore) return;
+        if (!Stage1Complete)
+        {
+            NotificationManager.Instance?.ShowInfo(
+                "Engine Core Stage 1 must be repaired first to enable fuel refill.");
+            return;
+        }
+        var thruster = FindFirstObjectByType<ThrusterPack>();
+        if (thruster == null) return;
+        thruster.Refuel(thruster.maxFuelCharges); // full refuel, no material cost
+        NotificationManager.Instance?.ShowInfo("Thruster Pack fully refueled at Engine Core!");
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+
+    private void CheckAndNotifyReady()
+    {
+        if (_isFullyRepaired || _readyNotificationShown) return;
+        if (!CanRepairCurrentStage()) return;
+        _readyNotificationShown = true;
+        NotificationManager.Instance?.ShowInfo(
+            $"{moduleName} READY TO REPAIR!\nApproach and press [E].");
+    }
+
+    private string BuildMissingText()
+    {
+        if (_currentStageIndex >= (stages?.Count ?? 0)) return "";
         var sb = new System.Text.StringBuilder();
         foreach (var req in stages[_currentStageIndex].requirements)
         {
-            int have = Inventory.Instance.GetCount(req.materialType);
-            if (have < req.required)
-                sb.AppendLine($"  {req.materialType}: {have}/{req.required}");
+            int have    = Inventory.Instance?.GetCount(req.materialType) ?? 0;
+            string name = System.Text.RegularExpressions.Regex.Replace(
+                req.materialType.ToString(), "(?<=[a-z])(?=[A-Z])", " ");
+            string st   = have >= req.required ? "[OK]" : $"{have}/{req.required}";
+            sb.AppendLine($"  {name}: {st}");
         }
         return sb.ToString();
     }
 
-    /// <summary>
-    /// Restores the repair stage index when loading a save file.
-    /// Called by SaveManager.Load() — do not call manually.
-    /// </summary>
-    public void LoadStageIndex(int stageIndex)
+    public void LoadStageIndex(int idx)
     {
-        _currentStageIndex = Mathf.Clamp(stageIndex, 0, stages.Count);
-
-        // Mark all stages before the loaded index as complete
-        for (int i = 0; i < _currentStageIndex && i < stages.Count; i++)
-            stages[i].isComplete = true;
-
-        _isFullyRepaired = _currentStageIndex >= stages.Count;
+        _currentStageIndex = Mathf.Clamp(idx, 0, stages?.Count ?? 0);
+        if (stages != null)
+            for (int i = 0; i < _currentStageIndex && i < stages.Count; i++)
+                stages[i].isComplete = true;
+        if (_currentStageIndex > 0 && !_stage1BonusApplied) ApplyStage1Bonus();
+        _isFullyRepaired = stages != null && _currentStageIndex >= stages.Count;
         onProgressChanged?.Invoke(Progress);
     }
 }

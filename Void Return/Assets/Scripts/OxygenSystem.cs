@@ -3,15 +3,18 @@ using UnityEngine.Events;
 
 /// <summary>
 /// Manages the player's oxygen supply.
-/// Oxygen depletes over time and faster during exertion or inside hull breach zones.
-/// Connect the UnityEvents in the Inspector to wire HUD updates and warning triggers.
+///
+/// ADDITIONS:
+///  — TakeDamageFromMeteorite(float amount): called by MeteoriteManager when
+///    a meteorite hits the player. Drains oxygen as a direct damage mechanic.
+///  — RefillAtLifeSupport(float amount): called when the player stands inside
+///    the Life Support module's zone and presses E. Gradually restores oxygen.
+///    Can also be used as a full instant refill if amount >= maxOxygen.
+///  — Warning flags reset when oxygen recovers above thresholds so they can
+///    fire again if oxygen drops low a second time.
 /// </summary>
 public class OxygenSystem : MonoBehaviour
 {
-    // ─────────────────────────────────────────────────────────────────────────
-    // Inspector Fields
-    // ─────────────────────────────────────────────────────────────────────────
-
     [Header("Oxygen Supply")]
     [Tooltip("Maximum oxygen in seconds of survival time.")]
     public float maxOxygen = 180f;
@@ -19,42 +22,44 @@ public class OxygenSystem : MonoBehaviour
     [Tooltip("Oxygen drained per second during normal movement.")]
     public float normalDrainRate = 1f;
 
-    [Tooltip("Oxygen drained per second while the player is using the thruster pack or running.")]
+    [Tooltip("Oxygen drained per second during exertion (thruster use, running).")]
     public float exertionDrainRate = 2f;
 
-    [Tooltip("Multiplier applied to the current drain rate when inside a hull breach zone.")]
+    [Tooltip("Multiplier applied to the drain rate inside a hull breach zone.")]
     public float breachDrainMultiplier = 3f;
 
     [Header("Canister Recovery")]
-    [Tooltip("Oxygen seconds restored when the player collects one oxygen canister.")]
+    [Tooltip("Oxygen seconds restored by picking up one oxygen canister.")]
     public float canisterRestoreAmount = 30f;
 
-    [Header("Warning Thresholds")]
-    [Tooltip("Normalized oxygen level (0–1) at which the low oxygen warning event fires.")]
-    [Range(0.05f, 0.5f)]
-    public float warningThreshold = 0.30f;
+    [Header("Life Support Refill")]
+    [Tooltip("Oxygen restored per second while standing inside the Life Support zone " +
+             "and the module is at least partially repaired (stage 1 complete).")]
+    public float lifeSupportRefillRate = 5f;
 
-    [Tooltip("Normalized oxygen level (0–1) at which the critical oxygen event fires.")]
+    [Header("Warning Thresholds")]
+    [Tooltip("Normalized oxygen below which the low-oxygen warning fires (0–1).")]
+    [Range(0.05f, 0.5f)]
+    public float warningThreshold  = 0.30f;
+
+    [Tooltip("Normalized oxygen below which the critical warning fires (0–1).")]
     [Range(0.01f, 0.2f)]
     public float criticalThreshold = 0.10f;
 
-    [Header("Events — Wire These in the Inspector")]
-    [Tooltip("Fired once when oxygen drops below the warning threshold.")]
-    public UnityEvent onLowOxygen;
-
-    [Tooltip("Fired once when oxygen drops below the critical threshold.")]
-    public UnityEvent onCriticalOxygen;
-
-    [Tooltip("Fired when oxygen reaches zero (game over trigger).")]
-    public UnityEvent onOxygenDepleted;
-
-    [Tooltip("Fired every frame with the normalized value (0–1). Wire to GameHUD.UpdateOxygen.")]
+    [Header("Events — Wire via GameManager or Inspector")]
+    [Tooltip("Fires every frame with the normalized oxygen value (0–1). Wire to GameHUD.UpdateOxygen.")]
     public UnityEvent<float> onOxygenChanged;
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // Private State
-    // ─────────────────────────────────────────────────────────────────────────
+    [Tooltip("Fires once when oxygen drops below warningThreshold.")]
+    public UnityEvent onLowOxygen;
 
+    [Tooltip("Fires once when oxygen drops below criticalThreshold.")]
+    public UnityEvent onCriticalOxygen;
+
+    [Tooltip("Fires when oxygen reaches zero.")]
+    public UnityEvent onOxygenDepleted;
+
+    // ─────────────────────────────────────────────────────────────────────────
     private float _currentOxygen;
     private bool  _isExerting;
     private bool  _inBreachZone;
@@ -66,11 +71,8 @@ public class OxygenSystem : MonoBehaviour
     // Public Properties
     // ─────────────────────────────────────────────────────────────────────────
 
-    /// <summary>Current oxygen as a normalized value between 0 and 1.</summary>
     public float OxygenNormalized => maxOxygen > 0f ? _currentOxygen / maxOxygen : 0f;
-
-    /// <summary>True when oxygen has fully run out.</summary>
-    public bool IsDepleted => _depleted;
+    public bool  IsDepleted       => _depleted;
 
     // ─────────────────────────────────────────────────────────────────────────
     // Unity Lifecycle
@@ -86,33 +88,98 @@ public class OxygenSystem : MonoBehaviour
     {
         if (_depleted) return;
 
+        // Calculate drain rate
         float rate = _isExerting ? exertionDrainRate : normalDrainRate;
         if (_inBreachZone) rate *= breachDrainMultiplier;
 
         _currentOxygen = Mathf.Max(0f, _currentOxygen - rate * Time.deltaTime);
         onOxygenChanged?.Invoke(OxygenNormalized);
 
-        CheckWarningThresholds();
+        CheckWarnings();
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // State Setters (called by other components)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    public void SetExertion(bool isExerting) => _isExerting = isExerting;
+    public void SetBreachZone(bool inBreach) => _inBreachZone = inBreach;
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Oxygen Restore Methods
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Restores oxygen when the player collects an oxygen canister.
+    /// </summary>
+    public void CollectCanister()
+    {
+        AddOxygen(canisterRestoreAmount);
+        NotificationManager.Instance?.Show("Oxygen canister collected!");
+    }
+
+    /// <summary>
+    /// Called each frame by LifeSupportZone while the player stands in range.
+    /// Restores oxygen gradually at lifeSupportRefillRate per second.
+    /// </summary>
+    public void RefillAtLifeSupport()
+    {
+        if (_currentOxygen >= maxOxygen) return;
+        AddOxygen(lifeSupportRefillRate * Time.deltaTime);
+    }
+
+    /// <summary>
+    /// Direct oxygen damage from a meteorite hit.
+    /// Called by MeteoriteManager.NotifyPlayerHit().
+    /// </summary>
+    public void TakeDamageFromMeteorite(float amount)
+    {
+        if (_depleted) return;
+        _currentOxygen = Mathf.Max(0f, _currentOxygen - amount);
+        onOxygenChanged?.Invoke(OxygenNormalized);
+        CheckWarnings();
+        Debug.Log($"[OxygenSystem] Meteorite hit — oxygen reduced by {amount}. " +
+                  $"Remaining: {_currentOxygen:F1}");
+    }
+
+    /// <summary>
+    /// Called by ShipRepairManager after Life Support is fully repaired.
+    /// Permanently increases max oxygen.
+    /// </summary>
+    public void ExtendMaxOxygen(float bonusSeconds)
+    {
+        maxOxygen      += bonusSeconds;
+        _currentOxygen  = Mathf.Min(maxOxygen, _currentOxygen + bonusSeconds * 0.5f);
+        onOxygenChanged?.Invoke(OxygenNormalized);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
     // Private Helpers
     // ─────────────────────────────────────────────────────────────────────────
 
-    private void CheckWarningThresholds()
+    private void AddOxygen(float amount)
+    {
+        _currentOxygen = Mathf.Min(maxOxygen, _currentOxygen + amount);
+        onOxygenChanged?.Invoke(OxygenNormalized);
+
+        // Reset warning flags if oxygen has recovered above thresholds
+        if (OxygenNormalized > warningThreshold)  _lowWarningFired      = false;
+        if (OxygenNormalized > criticalThreshold) _criticalWarningFired = false;
+        _depleted = false;
+    }
+
+    private void CheckWarnings()
     {
         if (!_lowWarningFired && OxygenNormalized <= warningThreshold)
         {
             _lowWarningFired = true;
             onLowOxygen?.Invoke();
         }
-
         if (!_criticalWarningFired && OxygenNormalized <= criticalThreshold)
         {
             _criticalWarningFired = true;
             onCriticalOxygen?.Invoke();
         }
-
         if (!_depleted && _currentOxygen <= 0f)
         {
             _depleted = true;
@@ -120,51 +187,13 @@ public class OxygenSystem : MonoBehaviour
         }
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // Public API — Called by Other Scripts
-    // ─────────────────────────────────────────────────────────────────────────
-
-    /// <summary>
-    /// Call with true when the player starts heavy activity (thrusting, sprinting).
-    /// Call with false when activity stops.
-    /// </summary>
-    public void SetExertion(bool isExerting)
+    /// <summary>Instantly restores oxygen to maximum. Called by SaveManager.Load().</summary>
+    public void RestoreFullOxygen()
     {
-        _isExerting = isExerting;
-    }
-
-    /// <summary>
-    /// Call with true when the player enters a hull breach area.
-    /// Call with false when they leave.
-    /// </summary>
-    public void SetBreachZone(bool inBreach)
-    {
-        _inBreachZone = inBreach;
-    }
-
-    /// <summary>
-    /// Restore oxygen when the player picks up an oxygen canister.
-    /// </summary>
-    public void CollectCanister()
-    {
-        _currentOxygen = Mathf.Min(maxOxygen, _currentOxygen + canisterRestoreAmount);
-
-        // Reset warning flags if oxygen recovered above thresholds
-        if (OxygenNormalized > warningThreshold)  _lowWarningFired      = false;
-        if (OxygenNormalized > criticalThreshold) _criticalWarningFired = false;
-
-        _depleted = false;
-        onOxygenChanged?.Invoke(OxygenNormalized);
-    }
-
-    /// <summary>
-    /// Called by ShipRepairManager when Life Support module is fully repaired.
-    /// Permanently increases max oxygen and partially refills current supply.
-    /// </summary>
-    public void ExtendMaxOxygen(float bonusSeconds)
-    {
-        maxOxygen      += bonusSeconds;
-        _currentOxygen  = Mathf.Min(maxOxygen, _currentOxygen + bonusSeconds * 0.5f);
-        onOxygenChanged?.Invoke(OxygenNormalized);
+        _currentOxygen        = maxOxygen;
+        _lowWarningFired      = false;
+        _criticalWarningFired = false;
+        _depleted             = false;
+        onOxygenChanged?.Invoke(1f);
     }
 }

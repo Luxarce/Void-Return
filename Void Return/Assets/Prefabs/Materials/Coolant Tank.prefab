@@ -51,10 +51,17 @@ MonoBehaviour:
   materialType: 13
   quantity: 1
   icon: {fileID: -931641297, guid: 5c7a77ce6e58ee44a96ad93e2fc64a40, type: 3}
+  driftSpeed: 1
+  tumbleSpeed: 45
+  floatDrag: 0.7
+  angularDrag: 0.5
+  minimumUpwardAngle: 20
+  launchSpeedMin: 3
+  launchSpeedMax: 5
   magnetRadius: 2.5
-  magnetSpeed: 5
-  audioSource: {fileID: 8329346193997916254}
+  magnetForce: 2
   pickupClip: {fileID: 8300000, guid: 2997157bf647b8d48954e487c9676b72, type: 3}
+  pickupVolume: 1
 --- !u!212 &2144406079119748981
 SpriteRenderer:
   m_ObjectHideFlags: 0

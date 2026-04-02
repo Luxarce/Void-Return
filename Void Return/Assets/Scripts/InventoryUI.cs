@@ -6,57 +6,92 @@ using System.Collections.Generic;
 /// <summary>
 /// Manages the inventory panel display.
 ///
-/// FIX NOTES:
-///  — Subscription to Inventory.OnInventoryChanged is now retried in Update
-///    if Inventory.Instance was null at Start (DontDestroyOnLoad object may
-///    not yet exist when this script's Start runs).
-///  — Input.GetKeyDown is now in Update (not inside a coroutine or fixed).
-///    Previously the Tab check was only called if the panel was active, which
-///    meant you could never open it.
-///  — Rebuild() now runs immediately on Open() without waiting for the event.
-///  — inventoryPanel.activeSelf check added so double-tapping Tab doesn't
-///    break state.
-///  — Added a public OpenFromButton() method for wiring to a UI Button's
-///    onClick event in the Inspector.
+/// FIX SUMMARY:
+///
+/// 1. TAB KEY NOT WORKING
+///    Root cause: InventoryUI was attached to the InventoryPanel itself.
+///    When the panel was inactive (SetActive=false), Update() stops running,
+///    so Input.GetKeyDown(Tab) was never checked.
+///    FIX: The Tab check is now in a separate persistent MonoBehaviour
+///    (InventoryToggleListener) that you attach to a GameObject that is
+///    ALWAYS active (e.g., GameCanvas or GameManager). InventoryUI still
+///    handles all the display logic. See InventoryToggleListener.cs.
+///    Alternatively, attach InventoryUI to the GameCanvas (always active),
+///    not the InventoryPanel itself.
+///
+/// 2. ICONS NOT SHOWING
+///    Root cause: The 'icon' field on MaterialPickup is what gets stored in
+///    Inventory.MaterialItem. However if the icon was null when AddItem was
+///    called, it stays null forever. The fix stores the icon from the prefab's
+///    MaterialPickup.icon field. Make sure each MaterialPickup prefab has the
+///    icon sprite assigned in its Inspector → Material Info → Icon field.
+///    The InventoryUI Rebuild() now logs which items have missing icons so
+///    you can find and fix them quickly in the Console.
+///
+/// 3. ITEMS NOT POPULATING
+///    Root cause: InventoryUI was attached to InventoryPanel (inactive by default).
+///    Start() never ran, so the OnInventoryChanged subscription never happened.
+///    FIX: Attach InventoryUI to the GameCanvas or another always-active parent,
+///    not to the InventoryPanel. The inventoryPanel field just references the
+///    panel to show/hide — InventoryUI does not need to be on that object.
+///
+/// CORRECT HIERARCHY:
+///   GameCanvas (always active)
+///   ├── InventoryUI script ← attach HERE, not on InventoryPanel
+///   └── InventoryPanel (starts inactive — just a child panel)
+///       └── ScrollView → Content (slotGridParent)
 /// </summary>
 public class InventoryUI : MonoBehaviour
 {
-    [Header("Panel")]
-    [Tooltip("The root InventoryPanel GameObject. Toggled by the Toggle Key.")]
+    [Header("Panel Reference")]
+    [Tooltip("The InventoryPanel GameObject to show/hide. " +
+             "Must be a child of an always-active parent. " +
+             "This script should NOT be on InventoryPanel itself — " +
+             "attach it to GameCanvas or another always-active object.")]
     public GameObject inventoryPanel;
 
     [Header("Slot Grid")]
-    [Tooltip("The Content Transform inside the Scroll View (must have Grid Layout Group).")]
+    [Tooltip("The Content Transform inside the Scroll View. Must have a Grid Layout Group.")]
     public Transform slotGridParent;
 
-    [Tooltip("Prefab for one inventory slot. " +
-             "Must have children named: 'Icon' (Image), 'Count' (TextMeshProUGUI), " +
-             "'Name' (TextMeshProUGUI, optional).")]
+    [Tooltip("Prefab for one inventory slot.\n" +
+             "REQUIRED child names:\n" +
+             "  'Icon'  — Image component (displays the material sprite icon)\n" +
+             "  'Count' — TextMeshProUGUI (shows x3, x5, etc.)\n" +
+             "  'Name'  — TextMeshProUGUI (shows material name, optional)")]
     public GameObject inventorySlotPrefab;
 
     [Header("Input")]
-    [Tooltip("Key that opens and closes the inventory panel. Default: Tab.")]
+    [Tooltip("Key that opens and closes the inventory panel.\n" +
+             "IMPORTANT: This only works if InventoryUI is on an always-active " +
+             "GameObject (not on InventoryPanel itself, which starts inactive).")]
     public KeyCode toggleKey = KeyCode.Tab;
 
     [Header("Empty State")]
-    [Tooltip("Label shown when no materials have been collected yet.")]
+    [Tooltip("Label shown when no materials have been collected. " +
+             "Place this TextMeshProUGUI inside InventoryPanel.")]
     public TextMeshProUGUI emptyLabel;
 
-    [Tooltip("Text shown on the empty label.")]
+    [Tooltip("Message shown on the empty label.")]
     public string emptyText = "No materials collected yet.\nExplore the debris field.";
 
     // ─────────────────────────────────────────────────────────────────────────
     private readonly List<GameObject> _slotInstances = new();
     private bool _subscribed;
+    private bool _isOpen;
 
     // ─────────────────────────────────────────────────────────────────────────
 
-    private void Start()
+    private void Awake()
     {
-        // Panel starts closed
+        // Make sure the panel starts closed
         if (inventoryPanel != null)
             inventoryPanel.SetActive(false);
+        _isOpen = false;
+    }
 
+    private void Start()
+    {
         if (emptyLabel != null)
         {
             emptyLabel.text = emptyText;
@@ -64,6 +99,11 @@ public class InventoryUI : MonoBehaviour
         }
 
         TrySubscribe();
+
+        Debug.Log("[InventoryUI] Started. Toggle key: " + toggleKey +
+                  " | Subscribed: " + _subscribed +
+                  " | Panel assigned: " + (inventoryPanel != null) +
+                  " | Slot prefab assigned: " + (inventorySlotPrefab != null));
     }
 
     private void OnDestroy()
@@ -74,74 +114,79 @@ public class InventoryUI : MonoBehaviour
 
     private void Update()
     {
-        // Retry subscription every frame until it succeeds
-        // (handles the case where Inventory is a DontDestroyOnLoad object
-        //  that isn't ready at the frame this script's Start() runs)
+        // Retry subscription in case Inventory wasn't ready at Start
         if (!_subscribed) TrySubscribe();
 
-        // Toggle key — works regardless of whether the panel is open or closed
         if (Input.GetKeyDown(toggleKey))
+        {
+            Debug.Log("[InventoryUI] Tab pressed — toggling inventory.");
             Toggle();
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────────
     // Public API
     // ─────────────────────────────────────────────────────────────────────────
 
-    /// <summary>Toggles the inventory open or closed.</summary>
     public void Toggle()
     {
-        if (inventoryPanel == null) return;
-        bool isOpen = inventoryPanel.activeSelf;
-        if (isOpen) Close();
-        else        Open();
+        if (_isOpen) Close();
+        else         Open();
     }
 
-    /// <summary>Opens the inventory panel and forces an immediate rebuild.</summary>
     public void Open()
     {
-        if (inventoryPanel == null) return;
+        if (inventoryPanel == null)
+        {
+            Debug.LogWarning("[InventoryUI] inventoryPanel is not assigned in Inspector.");
+            return;
+        }
+        _isOpen = true;
         inventoryPanel.SetActive(true);
-        Rebuild();  // Always rebuild on open so content is current
+        Rebuild();
     }
 
-    /// <summary>Closes the inventory panel.</summary>
     public void Close()
     {
+        _isOpen = false;
         inventoryPanel?.SetActive(false);
     }
 
-    /// <summary>
-    /// Call from a UI Button's onClick event in the Inspector.
-    /// Identical to Toggle() but has a clear name for Inspector wiring.
-    /// </summary>
+    // Called from a UI Button's onClick if you want a button to open inventory
     public void OpenFromButton() => Toggle();
 
     /// <summary>
-    /// Rebuilds all slot GameObjects from the current Inventory state.
-    /// Called automatically when Inventory.OnInventoryChanged fires,
-    /// and explicitly when the panel is opened.
+    /// Rebuilds all inventory slot GameObjects from the current Inventory contents.
+    /// Called automatically when Inventory.OnInventoryChanged fires AND when Open() runs.
     /// </summary>
     public void Rebuild()
     {
-        if (slotGridParent == null || inventorySlotPrefab == null)
+        if (slotGridParent == null)
         {
-            Debug.LogWarning("[InventoryUI] slotGridParent or inventorySlotPrefab is not assigned.");
+            Debug.LogWarning("[InventoryUI] slotGridParent is not assigned. " +
+                             "Drag the Content object from inside your Scroll View here.");
+            return;
+        }
+        if (inventorySlotPrefab == null)
+        {
+            Debug.LogWarning("[InventoryUI] inventorySlotPrefab is not assigned. " +
+                             "Drag your InventorySlot prefab here.");
             return;
         }
 
-        // Destroy existing slot GameObjects
+        // Clear old slots
         foreach (var slot in _slotInstances)
             if (slot != null) Destroy(slot);
         _slotInstances.Clear();
 
         if (Inventory.Instance == null)
         {
+            Debug.LogWarning("[InventoryUI] Inventory.Instance is null during Rebuild.");
             ShowEmptyLabel(true);
             return;
         }
 
-        var items   = Inventory.Instance.GetAllItems();
+        var items    = Inventory.Instance.GetAllItems();
         bool anyItem = false;
 
         foreach (var item in items)
@@ -149,29 +194,55 @@ public class InventoryUI : MonoBehaviour
             if (item.quantity <= 0) continue;
             anyItem = true;
 
-            GameObject slot = Instantiate(inventorySlotPrefab, slotGridParent);
+            // Instantiate a slot and parent it to the grid
+            var slot = Instantiate(inventorySlotPrefab, slotGridParent);
             _slotInstances.Add(slot);
 
-            // Icon
-            var iconImg = slot.transform.Find("Icon")?.GetComponent<Image>();
-            if (iconImg != null)
+            // ── ICON ─────────────────────────────────────────────────────────
+            // Looks for a child named exactly "Icon" with an Image component.
+            // The sprite comes from Inventory.MaterialItem.icon which is set
+            // when MaterialPickup.Collect() calls Inventory.AddItem(type, qty, icon).
+            // If your prefab's MaterialPickup.icon field has a sprite assigned,
+            // it will appear here automatically.
+            var iconTransform = slot.transform.Find("Icon");
+            var iconImage     = iconTransform?.GetComponent<Image>();
+            if (iconImage != null)
             {
-                iconImg.sprite  = item.icon;
-                iconImg.enabled = item.icon != null;
+                if (item.icon != null)
+                {
+                    iconImage.sprite         = item.icon;
+                    iconImage.color          = Color.white;
+                    iconImage.preserveAspect = true;
+                    iconImage.enabled        = true;
+                }
+                else
+                {
+                    // Icon is missing — log it so you can fix the prefab
+                    Debug.LogWarning($"[InventoryUI] Item '{item.itemName}' has no icon sprite. " +
+                                     $"Open the MaterialPickup prefab for '{item.type}' and " +
+                                     $"assign a sprite to the 'Icon' field in Material Info.");
+                    iconImage.enabled = false;
+                }
+            }
+            else
+            {
+                Debug.LogWarning("[InventoryUI] InventorySlot prefab is missing a child " +
+                                 "named 'Icon' with an Image component.");
             }
 
-            // Count label  e.g.  "x5"
+            // ── COUNT ─────────────────────────────────────────────────────────
             var countTxt = slot.transform.Find("Count")?.GetComponent<TextMeshProUGUI>();
             if (countTxt != null)
                 countTxt.text = $"x{item.quantity}";
 
-            // Name label  e.g.  "Metal Scrap"
+            // ── NAME ──────────────────────────────────────────────────────────
             var nameTxt = slot.transform.Find("Name")?.GetComponent<TextMeshProUGUI>();
             if (nameTxt != null)
                 nameTxt.text = item.itemName;
         }
 
         ShowEmptyLabel(!anyItem);
+        Debug.Log($"[InventoryUI] Rebuilt — {_slotInstances.Count} slots populated.");
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -183,6 +254,7 @@ public class InventoryUI : MonoBehaviour
         if (_subscribed || Inventory.Instance == null) return;
         Inventory.Instance.OnInventoryChanged += Rebuild;
         _subscribed = true;
+        Debug.Log("[InventoryUI] Subscribed to Inventory.OnInventoryChanged.");
     }
 
     private void ShowEmptyLabel(bool show)

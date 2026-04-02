@@ -2,81 +2,62 @@ using UnityEngine;
 using System;
 
 /// <summary>
-/// Controls a single meteorite projectile.
+/// Individual meteorite projectile.
 ///
-/// CHANGES IN THIS VERSION:
-///  — Added static event OnAnyImpact that MeteoriteManager subscribes to.
-///    When any meteorite hits, it fires this event with its world position and
-///    type — MeteoriteManager then spawns the correct material drops there.
-///  — meteoriteType field set by MeteoriteManager at spawn time.
-///  — _hasImpacted guard prevents double-impact.
-///  — Collider is force-set to non-trigger in Awake so OnCollisionEnter2D fires.
+/// OPTIMIZATION / LEAK PREVENTION:
+///  — impactVFXPrefab is Instantiated once at impact then auto-destroyed
+///    because the VFX prefab itself should have a ParticleSystem with Stop
+///    Action = Destroy. If you leave the prefab as a persistent object you
+///    will leak VFX instances. Ensure your impactVFXPrefab's root Particle
+///    System has: Stop Action = Destroy, Loop = OFF.
+///  — The meteorite itself always has a 15-second safety Destroy() scheduled
+///    in SetTarget() so it can never linger forever if it misses everything.
+///  — Oxygen damage is applied DIRECTLY via GetComponent on the hit object —
+///    no singleton dependency that could be null.
 /// </summary>
 [RequireComponent(typeof(Rigidbody2D))]
 public class Meteorite : MonoBehaviour
 {
-    // ─────────────────────────────────────────────────────────────────────────
-    // Static Event — MeteoriteManager subscribes to this
-    // ─────────────────────────────────────────────────────────────────────────
-
-    /// <summary>
-    /// Fired by every Meteorite when it impacts.
-    /// Params: impact world position, meteorite type.
-    /// MeteoriteManager.HandleMeteoriteImpact subscribes to this to spawn drops.
-    /// </summary>
+    // All Meteorite instances report their actual impact position here.
     public static event Action<Vector2, MeteoriteType> OnAnyImpact;
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // Inspector Fields
-    // ─────────────────────────────────────────────────────────────────────────
-
     [Header("Identity")]
-    [Tooltip("Set by MeteoriteManager at spawn. Determines which drop table is used.")]
+    [Tooltip("Set by MeteoriteManager at spawn. Determines drop table.")]
     public MeteoriteType meteoriteType = MeteoriteType.Stray;
 
     [Header("Flight")]
-    [Tooltip("Speed the meteorite travels toward its target.")]
-    public float speed = 22f;
-
-    [Tooltip("Degrees per second the meteorite tumbles as it flies.")]
+    public float speed       = 22f;
     public float tumbleSpeed = 90f;
 
     [Header("Impact")]
-    [Tooltip("VFX prefab spawned at the impact point. Assign MeteoriteImpactVFX.")]
+    [Tooltip("VFX prefab. MUST have Stop Action = Destroy on its root Particle System.")]
     public GameObject impactVFXPrefab;
 
-    [Tooltip("Layers that register as a valid impact. " +
-             "Assign: Ground, Debris, Player. " +
-             "If left as 'Nothing' (0), any collision will trigger an impact.")]
+    [Tooltip("Layers that count as valid collision targets.\n" +
+             "If left as Nothing (0), any collision triggers impact.")]
     public LayerMask impactLayers;
 
+    [Header("Oxygen Damage")]
+    [Tooltip("Oxygen drained when this meteorite hits the player.")]
+    public float oxygenDamageOnPlayerHit = 20f;
+
     [Header("Audio")]
-    [Tooltip("Sound played at impact world position.")]
     public AudioClip impactClip;
-
-    [Tooltip("Volume of the impact sound.")]
-    [Range(0f, 1f)]
-    public float impactVolume = 1f;
+    [Range(0f, 1f)] public float impactVolume = 1f;
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Private State
-    // ─────────────────────────────────────────────────────────────────────────
-
     private Rigidbody2D _rb;
-    private bool        _launched    = false;
-    private bool        _hasImpacted = false;
+    private bool        _launched;
+    private bool        _hasImpacted;
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // Unity Lifecycle
     // ─────────────────────────────────────────────────────────────────────────
 
     private void Awake()
     {
-        _rb              = GetComponent<Rigidbody2D>();
-        _rb.gravityScale = 0f;
+        _rb = GetComponent<Rigidbody2D>();
+        _rb.gravityScale           = 0f;
         _rb.collisionDetectionMode = CollisionDetectionMode2D.Continuous;
 
-        // Must be non-trigger so OnCollisionEnter2D fires
         var col = GetComponent<Collider2D>();
         if (col != null) col.isTrigger = false;
     }
@@ -88,84 +69,93 @@ public class Meteorite : MonoBehaviour
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Public API
-    // ─────────────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Called by MeteoriteManager after spawning to launch toward a target.
+    /// Launches the meteorite toward a world position.
+    /// Called by MeteoriteManager immediately after Instantiate.
+    /// A 15-second safety destroy is always scheduled so stray meteorites
+    /// that miss everything are never left alive indefinitely.
     /// </summary>
     public void SetTarget(Vector2 worldPosition)
     {
-        Vector2 dir    = (worldPosition - (Vector2)transform.position).normalized;
+        Vector2 dir        = (worldPosition - (Vector2)transform.position).normalized;
         _rb.linearVelocity = dir * speed;
-        _launched      = true;
+        _launched          = true;
 
-        float angle    = Mathf.Atan2(dir.y, dir.x) * Mathf.Rad2Deg;
+        float angle = Mathf.Atan2(dir.y, dir.x) * Mathf.Rad2Deg;
         transform.rotation = Quaternion.Euler(0f, 0f, angle - 90f);
 
-        // Safety auto-destroy if nothing is ever hit
+        // Always schedule a safety cleanup so this object can NEVER leak.
         Destroy(gameObject, 15f);
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // Collision
     // ─────────────────────────────────────────────────────────────────────────
 
     private void OnCollisionEnter2D(Collision2D col)
     {
         if (_hasImpacted) return;
 
-        // If impactLayers is set, only accept valid layers
         if (impactLayers.value != 0)
         {
-            bool layerMatch = ((1 << col.gameObject.layer) & impactLayers.value) != 0;
-            if (!layerMatch) return;
+            bool match = ((1 << col.gameObject.layer) & impactLayers.value) != 0;
+            if (!match) return;
         }
 
-        Vector2 contactPoint = col.contacts.Length > 0
+        Vector2 contact = col.contacts.Length > 0
             ? col.contacts[0].point
             : (Vector2)transform.position;
 
-        Impact(contactPoint, col.gameObject);
+        Impact(contact, col.gameObject);
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // Impact Logic
     // ─────────────────────────────────────────────────────────────────────────
 
     private void Impact(Vector2 position, GameObject hitObject)
     {
         _hasImpacted = true;
 
-        // Stop physics
+        // Stop physics immediately
         _rb.linearVelocity  = Vector2.zero;
         _rb.angularVelocity = 0f;
         _rb.bodyType        = RigidbodyType2D.Kinematic;
 
-        // Disable collider
+        // Disable collider so we stop triggering things
         var col = GetComponent<Collider2D>();
         if (col != null) col.enabled = false;
 
-        // Spawn VFX
+        // Spawn VFX — must have Stop Action = Destroy on the Particle System
         if (impactVFXPrefab != null)
-            Instantiate(impactVFXPrefab, position, Quaternion.identity);
+        {
+            var vfxObj = Instantiate(impactVFXPrefab, position, Quaternion.identity);
+            Destroy(vfxObj, 8f); // safety cleanup — VFX prefab should also have Stop Action = Destroy
+        }
 
-        // Play sound at world position (survives destruction)
+        // Play sound at world position (survives this object's destruction)
         if (impactClip != null)
             AudioSource.PlayClipAtPoint(impactClip, position, impactVolume);
 
-        // Notify of module hit
+        // Module hit
         if (hitObject.TryGetComponent<ShipModule>(out var module))
-            NotificationManager.Instance?.Show($"{module.moduleName} damaged by meteorite!", urgent: true);
+            NotificationManager.Instance?.ShowWarning($"{module.moduleName} hit by meteorite!");
 
-        // Notify of player hit
+        // Player hit — direct oxygen damage, no singleton dependency
         if (hitObject.CompareTag("Player"))
-            NotificationManager.Instance?.Show("Meteorite impact! Watch out!", urgent: true);
+        {
+            NotificationManager.Instance?.ShowWarning("METEORITE IMPACT! Oxygen depleting!");
 
-        // Fire the static event — MeteoriteManager will spawn material drops
+            var oxygen = hitObject.GetComponent<OxygenSystem>();
+            if (oxygen != null)
+                oxygen.TakeDamageFromMeteorite(oxygenDamageOnPlayerHit);
+            else
+                Debug.LogWarning("[Meteorite] Player hit but OxygenSystem not found.");
+
+            MeteoriteManager.Instance?.NotifyPlayerHit();
+        }
+
+        // Notify MeteoriteManager so it can spawn drops
         OnAnyImpact?.Invoke(position, meteoriteType);
 
-        // Destroy with tiny delay so VFX instantiates cleanly
+        // Small delay so VFX spawns cleanly before we destroy
         Destroy(gameObject, 0.05f);
     }
 }
