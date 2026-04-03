@@ -1,149 +1,183 @@
 using UnityEngine;
 
 /// <summary>
-/// Thruster Pack — directional DASH gadget.
+/// Thruster Pack — pure boost gadget.
 ///
-/// REDESIGN: Thruster is now a dash, not a sustained speed boost.
-///  — Left-click fires a single burst of force in the WASD input direction.
-///  — The burst is applied as a single ForceMode2D.Impulse (instantaneous).
-///  — After each dash, there is a cooldown before the next dash is available.
-///  — Fuel = number of dashes remaining. Replenish via Fuel Cell pickups.
+/// REDESIGN (no dash):
+///  Pressing and holding either the Space key OR Left Mouse Button applies a
+///  continuous force (boostForce) to the player every FixedUpdate.
+///  There is no dash / tap mode — just sustained thrust in the input direction.
+///  Releasing the key/button stops the thrust.
 ///
-/// This replaces the old "hold LMB for sustained thrust" mechanic.
-/// Now: select V, then left-click to dash in the direction you are pressing.
+///  The jetpack VFX particle system plays ONLY while thrusting and stops the
+///  moment the input is released or fuel runs out.
+///
+///  Fuel depletes at boostFuelDrainRate per second while active.
 /// </summary>
 public class ThrusterPack : MonoBehaviour
 {
-    [Header("Dash Settings")]
-    [Tooltip("Impulse force of each dash burst. Higher = further/faster dash.")]
-    public float dashForce = 18f;
+    [Header("Boost Settings")]
+    [Tooltip("Continuous force applied to the player's Rigidbody2D every FixedUpdate while active.")]
+    public float boostForce = 26f;
 
-    [Tooltip("Cooldown in seconds between dashes.")]
-    public float dashCooldown = 0.8f;
+    [Tooltip("Fuel charges drained per second while boosting. Lower = longer duration.")]
+    public float boostFuelDrainRate = 1.2f;
 
-    [Tooltip("Maximum number of dashes before fuel runs out.")]
+    [Header("Fuel")]
+    [Tooltip("Maximum fuel charge count.")]
     [Range(1, 20)]
     public int maxFuelCharges = 8;
 
-    [Tooltip("How many fuel charges are restored per Fuel Cell pickup.")]
+    [Tooltip("Fuel charges restored per Fuel Cell pickup.")]
     public int fuelPerPickup = 3;
 
-    [Header("Visual Feedback")]
-    [Tooltip("Particle system burst played on each dash.")]
+    [Header("VFX — Jetpack Particles")]
+    [Tooltip("Particle System that plays ONLY while thrusting. " +
+             "Attach a child Particle System here. Set Play on Awake = OFF.")]
     public ParticleSystem thrustVFX;
 
     [Header("Audio")]
     public AudioSource audioSource;
-    public AudioClip   dashClip;
+    public AudioClip   boostClip;
     public AudioClip   emptyClip;
     public AudioClip   rechargeClip;
 
     // ─────────────────────────────────────────────────────────────────────────
-    private int          _fuelCharges;
-    private float        _cooldownTimer;
-    private bool         _isDashing;      // true for one frame after a dash
-    private Rigidbody2D  _playerRb;
+    private float       _fuelCharges;
+    private bool        _isThrusting;
+    private Vector2     _thrustDirection;
+    private Rigidbody2D _playerRb;
 
     // ─────────────────────────────────────────────────────────────────────────
 
-    /// <summary>True for exactly one frame after a dash fires (for animation).</summary>
-    public bool  IsActive        => _isDashing;
-
-    /// <summary>Fuel normalized 0-1 for the HUD bar.</summary>
-    public float FuelNormalized  => maxFuelCharges > 0
-        ? (float)_fuelCharges / maxFuelCharges : 0f;
-
-    /// <summary>True when the cooldown has expired and a dash is ready.</summary>
-    public bool  CanDash         => _cooldownTimer <= 0f && _fuelCharges > 0;
+    public bool  IsActive       => _isThrusting;
+    public float FuelNormalized => maxFuelCharges > 0 ? _fuelCharges / maxFuelCharges : 0f;
 
     // ─────────────────────────────────────────────────────────────────────────
 
     private void Awake()
     {
-        _fuelCharges  = maxFuelCharges;
-        _playerRb     = GetComponentInParent<Rigidbody2D>();
+        _fuelCharges = maxFuelCharges;
+        _playerRb    = GetComponentInParent<Rigidbody2D>();
+    }
+
+    private void Start()
+    {
+        // Ensure VFX is off at start
+        if (thrustVFX != null)
+        {
+            thrustVFX.Stop();
+            thrustVFX.Clear();
+        }
     }
 
     private void Update()
     {
-        // Clear the IsActive flag after one frame
-        if (_isDashing) _isDashing = false;
-
-        // Count down cooldown
-        if (_cooldownTimer > 0f)
-            _cooldownTimer -= Time.deltaTime;
-
         GadgetHUDManager.Instance?.UpdateThrusterFuel(FuelNormalized);
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // Public API
-    // ─────────────────────────────────────────────────────────────────────────
-
-    /// <summary>
-    /// Fires a single dash in the given direction.
-    /// direction should be the player's WASD input (or mouse aim direction).
-    /// Called by PlayerController when gadget V is activated (left-click).
-    /// </summary>
-    public void Activate(Vector2 direction)
+    private void FixedUpdate()
     {
-        if (_fuelCharges <= 0)
+        if (!_isThrusting) return;
+
+        // Apply continuous boost force
+        _playerRb?.AddForce(_thrustDirection.normalized * boostForce, ForceMode2D.Force);
+
+        // Drain fuel
+        _fuelCharges -= boostFuelDrainRate * Time.fixedDeltaTime;
+        _fuelCharges  = Mathf.Max(0f, _fuelCharges);
+
+        if (_fuelCharges <= 0f)
         {
-            audioSource?.PlayOneShot(emptyClip);
-            NotificationManager.Instance?.ShowInfo(
-                "Thruster fuel empty! Collect Fuel Cells to refuel.");
+            StopBoost(fuelEmpty: true);
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Public API — called by PlayerController on key/button press
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Called every frame the thrust key/button is held.
+    /// Starts or continues boosting in the given direction.
+    /// PlayerController calls this for both Space key and LMB hold.
+    /// </summary>
+    public void BeginThrust(Vector2 direction)
+    {
+        if (_fuelCharges <= 0f)
+        {
+            if (_isThrusting) StopBoost(fuelEmpty: true);
+            else
+            {
+                audioSource?.PlayOneShot(emptyClip);
+                NotificationManager.Instance?.ShowInfo("Thruster fuel empty! Collect Fuel Cells.");
+            }
             return;
         }
 
-        if (_cooldownTimer > 0f)
+        if (!_isThrusting)
         {
-            // Cooldown still running — show remaining time
-            NotificationManager.Instance?.ShowInfo(
-                $"Thruster charging... {_cooldownTimer:F1}s");
-            return;
+            _isThrusting = true;
+            audioSource?.PlayOneShot(boostClip);
+            StartVFX();
         }
 
-        if (direction.sqrMagnitude < 0.01f)
-        {
-            // No direction input — dash in the facing direction instead
-            direction = Vector2.right; // fallback; PlayerController passes actual input
-        }
-
-        // Fire the dash impulse
-        _playerRb?.AddForce(direction.normalized * dashForce, ForceMode2D.Impulse);
-
-        _fuelCharges--;
-        _cooldownTimer = dashCooldown;
-        _isDashing     = true;
-
-        // Trigger a particle burst (not a looping effect)
-        if (thrustVFX != null)
-        {
-            thrustVFX.Stop();
-            thrustVFX.Play();
-        }
-
-        audioSource?.PlayOneShot(dashClip);
-        GadgetHUDManager.Instance?.UpdateThrusterFuel(FuelNormalized);
-
-        Debug.Log($"[Thruster] Dash fired in direction {direction}. " +
-                  $"Fuel remaining: {_fuelCharges}/{maxFuelCharges}");
+        // Update direction every frame so the player can steer while boosting
+        if (direction.sqrMagnitude > 0.01f)
+            _thrustDirection = direction;
     }
 
     /// <summary>
-    /// Refuel the thruster pack. Called by Fuel Cell pickups.
-    /// amount defaults to fuelPerPickup.
+    /// Called when the thrust key/button is released.
+    /// Stops boosting.
     /// </summary>
+    public void EndThrust()
+    {
+        if (!_isThrusting) return;
+        StopBoost(fuelEmpty: false);
+    }
+
+    /// <summary>Backward-compatible wrapper used by older code paths.</summary>
+    public void Activate(Vector2 direction) => BeginThrust(direction);
+
     public void Refuel(int amount = -1)
     {
-        int add = amount < 0 ? fuelPerPickup : amount;
+        int add      = amount < 0 ? fuelPerPickup : amount;
         _fuelCharges = Mathf.Min(_fuelCharges + add, maxFuelCharges);
         audioSource?.PlayOneShot(rechargeClip);
         GadgetHUDManager.Instance?.UpdateThrusterFuel(FuelNormalized);
         NotificationManager.Instance?.ShowInfo(
-            $"Thruster refueled! ({_fuelCharges}/{maxFuelCharges} dashes)");
+            $"Thruster refueled! ({_fuelCharges:F0}/{maxFuelCharges} charges)");
     }
 
-    /// <summary>Old float overload kept for backward compatibility with existing code.</summary>
     public void Refuel(float amount) => Refuel((int)amount);
+
+    // ─────────────────────────────────────────────────────────────────────────
+
+    private void StopBoost(bool fuelEmpty)
+    {
+        _isThrusting     = false;
+        _thrustDirection = Vector2.zero;
+        StopVFX();
+
+        if (fuelEmpty)
+        {
+            NotificationManager.Instance?.ShowInfo("Thruster fuel empty!");
+            GadgetHUDManager.Instance?.UpdateThrusterFuel(0f);
+        }
+    }
+
+    private void StartVFX()
+    {
+        if (thrustVFX == null) return;
+        if (!thrustVFX.isPlaying)
+            thrustVFX.Play();
+    }
+
+    private void StopVFX()
+    {
+        if (thrustVFX == null) return;
+        if (thrustVFX.isPlaying)
+            thrustVFX.Stop();
+    }
 }

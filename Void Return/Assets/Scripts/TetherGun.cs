@@ -3,17 +3,17 @@ using UnityEngine;
 /// <summary>
 /// Tether Gun — fires a hook that pulls objects or anchors the player.
 ///
-/// OPTIMIZATION:
-///  — hookImpactVFX is Instantiated once at hook contact then immediately
-///    scheduled for Destroy(vfx, 3f). The VFX prefab should have
-///    Stop Action = Destroy but we also schedule explicit cleanup.
-///  — LineRenderer is on this child object — no extra GameObjects spawned.
-///  — Release() always cleans up both hook states cleanly.
+/// BEHAVIOR CHANGE:
+///  Previously: first press fires, second press releases.
+///  Now: pressing Fire ALWAYS fires a new hook. If a hook is already active,
+///  it is automatically released and a new one is immediately fired.
+///  This means the player never needs two separate presses —
+///  every left-click fires to the new position.
 /// </summary>
 [RequireComponent(typeof(LineRenderer))]
 public class TetherGun : MonoBehaviour
 {
-    [Header("Tether Settings")]
+    [Header("Settings")]
     public float tetherRange         = 20f;
     public float pullForce           = 15f;
     public float selfPullForce       = 12f;
@@ -28,12 +28,8 @@ public class TetherGun : MonoBehaviour
     public AudioClip   missClip;
 
     [Header("VFX")]
-    [Tooltip("VFX spawned at hook contact point. Must have Stop Action = Destroy " +
-             "OR will be explicitly destroyed after vfxLifetime seconds.")]
+    [Tooltip("Spawned at hook contact point. Must have Stop Action = Destroy.")]
     public GameObject hookImpactVFX;
-
-    [Tooltip("Seconds before the hook impact VFX is force-destroyed. " +
-             "Safety net in case Stop Action = Destroy is not set on the prefab.")]
     public float vfxLifetime = 3f;
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -51,12 +47,10 @@ public class TetherGun : MonoBehaviour
         _line               = GetComponent<LineRenderer>();
         _line.enabled       = false;
         _line.positionCount = 2;
-
-        _playerRb = GetComponentInParent<Rigidbody2D>();
+        _playerRb           = GetComponentInParent<Rigidbody2D>();
 
         if (tetherMask.value == 0)
-            Debug.LogWarning("[TetherGun] tetherMask is Nothing — tether will never connect. " +
-                             "Tick Debris and Ground in the Tether Mask field.");
+            Debug.LogWarning("[TetherGun] tetherMask is Nothing — tether will never connect.");
     }
 
     private void FixedUpdate()
@@ -90,9 +84,16 @@ public class TetherGun : MonoBehaviour
 
     // ─────────────────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Fires the tether toward the given direction.
+    /// If a hook is already active, it is AUTOMATICALLY released first,
+    /// then a new hook is immediately fired. Single press = always fires.
+    /// </summary>
     public void Fire(Vector2 direction)
     {
-        if (_isHooked) { Release(); return; }
+        // Auto-release any existing hook before firing a new one
+        if (_isHooked)
+            Release(silent: true);  // silent release — no sound, immediately fire new hook
 
         if (tetherMask.value == 0)
         {
@@ -115,11 +116,10 @@ public class TetherGun : MonoBehaviour
         audioSource?.PlayOneShot(fireClip);
         audioSource?.PlayOneShot(hookImpactClip);
 
-        // Spawn VFX with guaranteed cleanup
         if (hookImpactVFX != null)
         {
             var vfx = Instantiate(hookImpactVFX, hit.point, Quaternion.identity);
-            Destroy(vfx, vfxLifetime); // always destroy, even if Stop Action = Destroy fails
+            Destroy(vfx, vfxLifetime);
         }
 
         if (hit.rigidbody != null && hit.rigidbody.bodyType == RigidbodyType2D.Dynamic)
@@ -134,12 +134,14 @@ public class TetherGun : MonoBehaviour
         }
     }
 
-    public void Release()
+    public void Release() => Release(silent: false);
+
+    private void Release(bool silent)
     {
         _isHooked        = false;
         _isStaticHook    = false;
         _hookedRigidbody = null;
         _line.enabled    = false;
-        audioSource?.PlayOneShot(releaseClip);
+        if (!silent) audioSource?.PlayOneShot(releaseClip);
     }
 }

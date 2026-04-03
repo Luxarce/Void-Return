@@ -1,23 +1,17 @@
 using UnityEngine;
 using UnityEngine.Events;
+using TMPro;
 
 /// <summary>
-/// Detects when the player enters the module's interaction zone and handles the E key.
+/// Detects when the player enters a module's interaction zone and handles the [E] key.
 ///
-/// HOW REPAIR WORKS:
-///  This script calls module.AttemptRepair() DIRECTLY on the [E] key press.
-///  No UnityEvent wiring is needed — the connection is made in code via
-///  GetComponent<ShipModule>() in Awake().
+/// FIX — NOTIFICATION PERSISTS:
+///  The notification is now re-shown on a regular interval while the player
+///  is inside the zone (showInterval seconds). This ensures the prompt text
+///  stays visible and updates dynamically (e.g. showing [READY] once materials
+///  are collected) without spamming the notification queue.
 ///
-///  For Engine Core, pressing [E] when Stage 1 is complete and the module is
-///  not yet fully repaired gives the player a CHOICE:
-///    - If thruster needs fuel: refuel first, then on the next press: repair.
-///    - This is handled by choosing RefuelThrusterFromEngineCore() vs AttemptRepair().
-///
-/// SETUP:
-///  1. Add ProximityInteraction to each module's repair point GameObject.
-///  2. Make sure that GameObject also has ShipModule and a trigger Collider2D.
-///  3. No Inspector event wiring needed.
+///  The world-space prompt UI (if assigned) also updates continuously.
 /// </summary>
 [RequireComponent(typeof(Collider2D))]
 public class ProximityInteraction : MonoBehaviour
@@ -26,27 +20,26 @@ public class ProximityInteraction : MonoBehaviour
     [Tooltip("Key the player presses to interact.")]
     public KeyCode interactKey = KeyCode.E;
 
-    [Tooltip("Optional world-space UI shown while player is in range.")]
+    [Header("Prompt UI")]
+    [Tooltip("Optional world-space UI panel shown above the module while player is in range.")]
     public GameObject interactPromptUI;
 
-    [Tooltip("Re-evaluates the prompt text every N seconds while player is nearby.")]
-    [Range(0.5f, 5f)]
-    public float promptRefreshInterval = 1f;
+    [Tooltip("How often (seconds) the persistent notification re-fires while the player stays in range.")]
+    [Range(1f, 10f)]
+    public float showInterval = 2.5f;
 
     [Header("Audio")]
     public AudioSource audioSource;
     public AudioClip   interactClip;
 
     [Header("Optional Fallback Event")]
-    [Tooltip("Fires when the player presses [E] in range. " +
-             "Only needed if this object has NO ShipModule — the script calls " +
-             "module.AttemptRepair() directly when a ShipModule is present.")]
+    [Tooltip("Only used when there is no ShipModule on this GameObject.")]
     public UnityEvent onInteract;
 
     // ─────────────────────────────────────────────────────────────────────────
     private bool       _playerInRange;
     private ShipModule _module;
-    private float      _refreshTimer;
+    private float      _showTimer;
 
     // ─────────────────────────────────────────────────────────────────────────
 
@@ -65,15 +58,16 @@ public class ProximityInteraction : MonoBehaviour
     {
         if (!_playerInRange) return;
 
+        // Interact key
         if (Input.GetKeyDown(interactKey))
             HandleInteraction();
 
-        // Refresh prompt text periodically so [READY] appears automatically
-        _refreshTimer += Time.deltaTime;
-        if (_refreshTimer >= promptRefreshInterval)
+        // Persistent notification — re-show prompt text every showInterval seconds
+        _showTimer -= Time.deltaTime;
+        if (_showTimer <= 0f)
         {
-            _refreshTimer = 0f;
-            RefreshPromptText(quiet: true);
+            _showTimer = showInterval;
+            RefreshPromptText(quiet: false);
         }
     }
 
@@ -83,7 +77,7 @@ public class ProximityInteraction : MonoBehaviour
     {
         if (!other.CompareTag("Player")) return;
         _playerInRange = true;
-        _refreshTimer  = 0f;
+        _showTimer     = 0f;             // show immediately on entry
         interactPromptUI?.SetActive(true);
         RefreshPromptText(quiet: false);
         _module?.OnPlayerProximityEnter();
@@ -104,8 +98,7 @@ public class ProximityInteraction : MonoBehaviour
 
         if (_module != null)
         {
-            // Engine Core special: if stage 1 done but not fully repaired,
-            // first press refuels thruster; second press continues repair.
+            // Engine Core: refuel thruster first press if needed
             if (_module.moduleType == ModuleType.EngineCore &&
                 _module.Stage1Complete && !_module.IsFullyRepaired)
             {
@@ -113,10 +106,9 @@ public class ProximityInteraction : MonoBehaviour
                 if (thruster != null && thruster.FuelNormalized < 0.99f)
                 {
                     _module.RefuelThrusterFromEngineCore();
-                    return;   // refueled this press — repair on next press
+                    return;
                 }
             }
-
             _module.AttemptRepair();
         }
         else
@@ -124,10 +116,10 @@ public class ProximityInteraction : MonoBehaviour
             onInteract?.Invoke();
         }
 
+        // Immediately refresh prompt after interaction
+        _showTimer = showInterval;
         RefreshPromptText(quiet: true);
     }
-
-    // ─────────────────────────────────────────────────────────────────────────
 
     private void RefreshPromptText(bool quiet)
     {
@@ -135,13 +127,14 @@ public class ProximityInteraction : MonoBehaviour
             ? _module.GetProximityPrompt()
             : "Press [E] to interact";
 
+        // Show notification (not quiet = show in notification channel)
         if (!quiet)
             NotificationManager.Instance?.ShowInfo(text);
 
-        // Update the world-space prompt UI if one is assigned
+        // Always update the world-space prompt UI regardless of quiet flag
         if (interactPromptUI != null)
         {
-            var tmp = interactPromptUI.GetComponentInChildren<TMPro.TextMeshProUGUI>();
+            var tmp = interactPromptUI.GetComponentInChildren<TextMeshProUGUI>();
             if (tmp != null) tmp.text = text;
         }
     }

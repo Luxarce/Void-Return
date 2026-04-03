@@ -23,14 +23,17 @@ public class RepairStage
 /// <summary>
 /// Manages the repair state of one spacecraft module.
 ///
-/// FIXES / ADDITIONS:
-///  — Repair now works reliably. AttemptRepair() is wired via ProximityInteraction
-///    which calls it directly (no UnityEvent chain needed).
-///  — Hull Plating and Engine Core grant special bonuses after STAGE 1 completion
-///    (not after full repair). Bonus info is shown in the proximity hover prompt.
-///  — GetProximityPrompt() now includes Stage 1 bonus descriptions so players
-///    know what they unlock as they repair.
-///  — Thruster refill from Engine Core is blocked until stage 1 is complete.
+/// PROGRESS BAR DEBUG:
+///  The reason the bar doesn't move even when onProgressChanged fires is almost
+///  always one of:
+///   1. GameManager.gameHUD is null  — no listener was added.
+///   2. The Slider Min = Max = 0    — slider can't display any value.
+///   3. onProgressChanged has no listeners at all (GameManager didn't wire them).
+///
+///  This version adds a listener COUNT log at Start so you can see in the Console
+///  whether the event has been wired:
+///    "[ShipModule:X] onProgressChanged has N listeners"
+///  If N = 0, GameManager did not wire the event — check GameManager field assignments.
 /// </summary>
 public class ShipModule : MonoBehaviour
 {
@@ -39,6 +42,7 @@ public class ShipModule : MonoBehaviour
     public ModuleType moduleType;
 
     [Header("Repair Stages")]
+    [Tooltip("Add one entry per repair phase. Completion Fractions must sum to 1.0.")]
     public List<RepairStage> stages = new();
 
     [Header("VFX")]
@@ -50,7 +54,7 @@ public class ShipModule : MonoBehaviour
     public AudioClip   repairClip;
     public AudioClip   completionClip;
 
-    [Header("Events")]
+    [Header("Events — Wired automatically by GameManager")]
     public UnityEvent        onModuleRepaired;
     public UnityEvent<float> onProgressChanged;
 
@@ -81,14 +85,54 @@ public class ShipModule : MonoBehaviour
 
     private void Start()
     {
+        ValidateStages();
+
+        // Broadcast initial progress — fills bar on scene load
+        onProgressChanged?.Invoke(Progress);
+
+        // DIAGNOSTIC: log how many listeners are wired to onProgressChanged.
+        // "0 listeners" means GameManager did not wire this event.
+        int listenerCount = onProgressChanged?.GetPersistentEventCount() ?? 0;
+        // Note: runtime listeners (AddListener) don't appear in GetPersistentEventCount.
+        // We use a delayed check to catch both types.
+        Invoke(nameof(LogListenerStatus), 1f);
+
         if (Inventory.Instance != null)
             Inventory.Instance.OnInventoryChanged += CheckAndNotifyReady;
+
+        Debug.Log($"[ShipModule:{moduleName}] Start — stages={stages?.Count ?? 0}, " +
+                  $"currentStage={_currentStageIndex}, progress={Progress:P0}, " +
+                  $"persistentListeners={listenerCount}");
+    }
+
+    private void LogListenerStatus()
+    {
+        // This fires 1 second after Start, by which time GameManager.Start() has run.
+        // We invoke the event with the current value and watch for downstream logs.
+        Debug.Log($"[ShipModule:{moduleName}] Firing onProgressChanged({Progress:F3}) — " +
+                  $"check for '[GameManager]' and '[GameHUD]' logs below.");
+        onProgressChanged?.Invoke(Progress);
     }
 
     private void OnDestroy()
     {
         if (Inventory.Instance != null)
             Inventory.Instance.OnInventoryChanged -= CheckAndNotifyReady;
+    }
+
+    private void ValidateStages()
+    {
+        if (stages == null || stages.Count == 0)
+        {
+            Debug.LogError($"[ShipModule:{moduleName}] STAGES LIST IS EMPTY. " +
+                           "Select this module. In ShipModule > Repair Stages, click + to add stages.");
+            return;
+        }
+        float total = 0f;
+        foreach (var s in stages) total += s.completionFraction;
+        if (Mathf.Abs(total - 1f) > 0.05f)
+            Debug.LogWarning($"[ShipModule:{moduleName}] Completion fractions sum to " +
+                             $"{total:F2} (should be 1.0).");
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -103,66 +147,55 @@ public class ShipModule : MonoBehaviour
         return true;
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // MAIN REPAIR METHOD — called directly by ProximityInteraction.cs
-    // ─────────────────────────────────────────────────────────────────────────
-
     public void AttemptRepair()
     {
+        Debug.Log($"[ShipModule:{moduleName}] AttemptRepair — " +
+                  $"stage={_currentStageIndex}/{stages?.Count ?? 0}, " +
+                  $"canRepair={CanRepairCurrentStage()}, inventory={Inventory.Instance != null}");
+
         if (_isFullyRepaired)
         {
-            string bonus = GetSpecialBonusText();
-            NotificationManager.Instance?.ShowInfo(
-                $"{moduleName} is fully repaired." + (bonus != "" ? $"\n{bonus}" : ""));
+            NotificationManager.Instance?.ShowInfo($"{moduleName} is fully repaired.{GetSpecialBonusText()}");
             return;
         }
         if (stages == null || stages.Count == 0)
         {
-            Debug.LogError($"[ShipModule:{moduleName}] No stages in Inspector. " +
-                           "Add repair stages in the ShipModule component.");
-            NotificationManager.Instance?.ShowInfo(
-                $"{moduleName}: No repair data configured.");
+            Debug.LogError($"[ShipModule:{moduleName}] No stages — add them in Inspector.");
+            NotificationManager.Instance?.ShowInfo($"{moduleName}: No repair stages configured.");
             return;
         }
-        if (Inventory.Instance == null)
-        {
-            Debug.LogError("[ShipModule] Inventory.Instance is null.");
-            return;
-        }
+        if (Inventory.Instance == null) { Debug.LogError("[ShipModule] Inventory null."); return; }
+
         if (!CanRepairCurrentStage())
         {
             NotificationManager.Instance?.ShowInfo(
-                $"{moduleName} — Stage {_currentStageIndex + 1}\n" +
-                $"Need:\n{BuildMissingText()}");
+                $"{moduleName} — Stage {_currentStageIndex + 1}\nStill need:\n{BuildMissingText()}");
             return;
         }
 
         // Consume materials
-        var stage = stages[_currentStageIndex];
-        foreach (var req in stage.requirements)
+        foreach (var req in stages[_currentStageIndex].requirements)
         {
             if (!Inventory.Instance.ConsumeMaterials(req.materialType, req.required))
             {
-                Debug.LogError($"[ShipModule:{moduleName}] Consume failed mid-repair. " +
-                               "This should not happen after CanRepair check.");
+                Debug.LogError($"[ShipModule:{moduleName}] Consume failed for {req.materialType}.");
                 return;
             }
         }
 
-        stage.isComplete = true;
+        stages[_currentStageIndex].isComplete = true;
         _currentStageIndex++;
         _readyNotificationShown = false;
 
-        // Apply stage 1 bonuses for Hull Plating and Engine Core
-        if (_currentStageIndex == 1 && !_stage1BonusApplied)
-            ApplyStage1Bonus();
+        if (_currentStageIndex == 1 && !_stage1BonusApplied) ApplyStage1Bonus();
 
         repairParticles?.Play();
         audioSource?.PlayOneShot(repairClip);
-        onProgressChanged?.Invoke(Progress);
 
-        Debug.Log($"[ShipModule:{moduleName}] Stage {_currentStageIndex} complete. " +
-                  $"Progress: {Progress:P0}");
+        float prog = Progress;
+        onProgressChanged?.Invoke(prog);
+        Debug.Log($"[ShipModule:{moduleName}] Stage {_currentStageIndex} complete — " +
+                  $"progress={prog:P0} — fired onProgressChanged({prog:F3}).");
 
         if (_currentStageIndex >= stages.Count)
         {
@@ -182,139 +215,90 @@ public class ShipModule : MonoBehaviour
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Stage 1 Bonuses (Hull Plating and Engine Core)
-    // ─────────────────────────────────────────────────────────────────────────
 
     private void ApplyStage1Bonus()
     {
         _stage1BonusApplied = true;
-
         switch (moduleType)
         {
             case ModuleType.HullPlating:
-                // Hull Plating Stage 1: unlock grenade crafting
-                var grenadeGun = FindFirstObjectByType<GravityGrenadeLauncher>();
-                if (grenadeGun != null)
-                {
-                    grenadeGun.gameObject.SetActive(true);
-                    GadgetHUDManager.Instance?.SetGadgetAvailable(2, true);
-                }
-                NotificationManager.Instance?.ShowInfo(
-                    "Hull Plating Stage 1 complete!\nGravity Grenade now available.\n" +
-                    "Press [C] while holding grenade to craft more.");
+                var gg = FindFirstObjectByType<GravityGrenadeLauncher>();
+                if (gg != null) { gg.gameObject.SetActive(true); GadgetHUDManager.Instance?.SetGadgetAvailable(2, true); }
+                NotificationManager.Instance?.ShowInfo("Hull Plating Stage 1 — Gravity Grenade unlocked. Press [C] to craft.");
                 break;
-
             case ModuleType.EngineCore:
-                // Engine Core Stage 1: enable thruster refill at this module
-                NotificationManager.Instance?.ShowInfo(
-                    "Engine Core Stage 1 complete!\nThruster fuel can now be refilled " +
-                    "here.\nApproach and press [E] to refuel.");
+                NotificationManager.Instance?.ShowInfo("Engine Core Stage 1 — Thruster can be refueled here. Press [E].");
                 break;
         }
     }
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // Proximity Prompt — called by ProximityInteraction
-    // ─────────────────────────────────────────────────────────────────────────
 
     public string GetProximityPrompt()
     {
         if (stages == null || stages.Count == 0)
-            return $"{moduleName}\nNo repair data configured.";
+            return $"{moduleName}\n[!] No repair stages — check Inspector.";
 
-        string bonus = GetSpecialBonusText();
-        string bonusLine = bonus != "" ? $"\n{bonus}" : "";
+        string bonusLine = GetSpecialBonusText();
 
         if (_isFullyRepaired)
             return $"{moduleName} — [DONE] Fully repaired{bonusLine}";
-
         if (CanRepairCurrentStage())
-            return $"{moduleName} — Stage {_currentStageIndex + 1}\n" +
-                   $"Press [E] to repair  [READY]{bonusLine}";
-
-        return $"{moduleName} — Stage {_currentStageIndex + 1}\n" +
-               $"Press [E] to check materials{bonusLine}";
+            return $"{moduleName} — Stage {_currentStageIndex + 1}\nPress [E] to repair  [READY]{bonusLine}";
+        return $"{moduleName} — Stage {_currentStageIndex + 1}\nPress [E] to check materials{bonusLine}";
     }
 
     private string GetSpecialBonusText()
     {
-        switch (moduleType)
+        return moduleType switch
         {
-            case ModuleType.HullPlating:
-                if (!Stage1Complete)
-                    return "[Stage 1 unlock] Enables Gravity Grenade crafting";
-                if (!_isFullyRepaired)
-                    return "[Full repair] Grenade capacity upgraded";
-                return "Grenade crafting: press [C] with grenade selected";
-
-            case ModuleType.EngineCore:
-                if (!Stage1Complete)
-                    return "[Stage 1 unlock] Enables Thruster fuel refill here";
-                if (!_isFullyRepaired)
-                    return "[Full repair] Thruster Pack unlocked";
-                return "Press [E] here to refuel Thruster";
-
-            default:
-                return "";
-        }
+            ModuleType.HullPlating => !Stage1Complete
+                ? "\nStage 1 unlock: Gravity Grenade"
+                : (!_isFullyRepaired ? "\nFull repair: Grenade capacity max" : "\nCraft grenades: press [C]"),
+            ModuleType.EngineCore  => !Stage1Complete
+                ? "\nStage 1 unlock: Thruster refuel here"
+                : (!_isFullyRepaired ? "\nFull repair: Thruster Pack unlocked" : "\nPress [E] to refuel Thruster"),
+            _ => "",
+        };
     }
 
-    // Called by ProximityInteraction when the player is nearby (not yet pressing E)
     public void OnPlayerProximityEnter()
     {
-        // Show thruster refill option for Engine Core if stage 1 is done
         if (moduleType == ModuleType.EngineCore && Stage1Complete && !_isFullyRepaired)
         {
-            var thruster = FindFirstObjectByType<ThrusterPack>();
-            if (thruster != null && thruster.FuelNormalized < 1f)
+            var tp = FindFirstObjectByType<ThrusterPack>();
+            if (tp != null && tp.FuelNormalized < 1f)
                 NotificationManager.Instance?.ShowInfo(
-                    $"{moduleName}: Press [E] to refuel Thruster " +
-                    $"({thruster.FuelNormalized * 100f:F0}% fuel)\n" +
-                    "OR press [E] to continue repairs.");
+                    $"Engine Core: Press [E] to refuel Thruster ({tp.FuelNormalized * 100f:F0}%)\nOR continue repairs.");
         }
     }
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // Thruster Refill (Engine Core interaction when stage 1 done)
-    // ─────────────────────────────────────────────────────────────────────────
 
     public void RefuelThrusterFromEngineCore()
     {
         if (moduleType != ModuleType.EngineCore) return;
-        if (!Stage1Complete)
-        {
-            NotificationManager.Instance?.ShowInfo(
-                "Engine Core Stage 1 must be repaired first to enable fuel refill.");
-            return;
-        }
-        var thruster = FindFirstObjectByType<ThrusterPack>();
-        if (thruster == null) return;
-        thruster.Refuel(thruster.maxFuelCharges); // full refuel, no material cost
-        NotificationManager.Instance?.ShowInfo("Thruster Pack fully refueled at Engine Core!");
+        if (!Stage1Complete) { NotificationManager.Instance?.ShowInfo("Repair Engine Core Stage 1 first."); return; }
+        var tp = FindFirstObjectByType<ThrusterPack>();
+        if (tp == null) return;
+        tp.Refuel(tp.maxFuelCharges);
+        NotificationManager.Instance?.ShowInfo("Thruster fully refueled at Engine Core!");
     }
-
-    // ─────────────────────────────────────────────────────────────────────────
 
     private void CheckAndNotifyReady()
     {
         if (_isFullyRepaired || _readyNotificationShown) return;
         if (!CanRepairCurrentStage()) return;
         _readyNotificationShown = true;
-        NotificationManager.Instance?.ShowInfo(
-            $"{moduleName} READY TO REPAIR!\nApproach and press [E].");
+        NotificationManager.Instance?.ShowInfo($"{moduleName} READY TO REPAIR!\nApproach and press [E].");
     }
 
     private string BuildMissingText()
     {
-        if (_currentStageIndex >= (stages?.Count ?? 0)) return "";
+        if (_currentStageIndex >= (stages?.Count ?? 0)) return "None";
         var sb = new System.Text.StringBuilder();
         foreach (var req in stages[_currentStageIndex].requirements)
         {
-            int have    = Inventory.Instance?.GetCount(req.materialType) ?? 0;
+            int    have = Inventory.Instance?.GetCount(req.materialType) ?? 0;
             string name = System.Text.RegularExpressions.Regex.Replace(
                 req.materialType.ToString(), "(?<=[a-z])(?=[A-Z])", " ");
-            string st   = have >= req.required ? "[OK]" : $"{have}/{req.required}";
-            sb.AppendLine($"  {name}: {st}");
+            sb.AppendLine($"  {name}: {(have >= req.required ? "[OK]" : $"{have}/{req.required}")}");
         }
         return sb.ToString();
     }

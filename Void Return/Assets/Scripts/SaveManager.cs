@@ -15,25 +15,23 @@ public class GameSaveData
 }
 
 /// <summary>
-/// Saves and loads game state to PlayerPrefs.
+/// Saves and loads game state.
 ///
-/// FIX — FULL OXYGEN ON LOAD:
-///  When the player dies and loads from save, they should respawn with full
-///  oxygen (not the low oxygen that caused their death). Previously
-///  Load() restored oxygenNormalized from the save — which was the saved
-///  value at save time, but if they saved with low oxygen they'd still respawn
-///  with low oxygen.
-///
-///  Behavior:
-///   Save() stores current oxygen (so the player can reload a mid-game state).
-///   Load() ALWAYS restores oxygen to FULL, regardless of the saved value.
-///   This gives the player a fair restart. The saved value is intentionally ignored.
+/// ADDITION: Auto-save every autoSaveIntervalMinutes (default 5 minutes).
+/// A small notification confirms the auto-save.
+/// Load always restores full oxygen.
+/// SaveFileExists() is static so MainMenuManager can call it without a scene reference.
 /// </summary>
 public class SaveManager : MonoBehaviour
 {
     public static SaveManager Instance { get; private set; }
 
     private const string SAVE_KEY = "VoidReturn_Save";
+
+    [Header("Auto-Save")]
+    [Tooltip("Auto-save interval in minutes. Set to 0 to disable auto-save.")]
+    [Range(0f, 30f)]
+    public float autoSaveIntervalMinutes = 5f;
 
     [Header("Module References")]
     public ShipModule lifeSupport;
@@ -42,13 +40,15 @@ public class SaveManager : MonoBehaviour
     public ShipModule engineCore;
 
     [Header("Player References")]
-    [Tooltip("OxygenSystem on the Player.")]
     public OxygenSystem oxygenSystem;
 
     [Header("Gadget References")]
     public TetherGun              tetherGun;
     public GravityGrenadeLauncher grenadeGun;
     public ThrusterPack           thrusterPack;
+
+    // ─────────────────────────────────────────────────────────────────────────
+    private float _autoSaveTimer;
 
     // ─────────────────────────────────────────────────────────────────────────
 
@@ -60,6 +60,8 @@ public class SaveManager : MonoBehaviour
 
     private void Start()
     {
+        _autoSaveTimer = autoSaveIntervalMinutes * 60f;
+
         if (PlayerPrefs.GetInt("LoadOnStart", 0) == 1)
         {
             PlayerPrefs.SetInt("LoadOnStart", 0);
@@ -67,9 +69,46 @@ public class SaveManager : MonoBehaviour
         }
     }
 
+    private void Update()
+    {
+        if (autoSaveIntervalMinutes <= 0f) return;
+
+        _autoSaveTimer -= Time.deltaTime;
+        if (_autoSaveTimer <= 0f)
+        {
+            _autoSaveTimer = autoSaveIntervalMinutes * 60f;
+            AutoSave();
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Static helper — called by MainMenuManager (no scene instance needed)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    public static bool SaveFileExists() => PlayerPrefs.HasKey(SAVE_KEY);
+
     // ─────────────────────────────────────────────────────────────────────────
 
     public void Save()
+    {
+        string json = BuildSaveJson();
+        PlayerPrefs.SetString(SAVE_KEY, json);
+        PlayerPrefs.Save();
+        NotificationManager.Instance?.ShowInfo("Game saved.");
+        Debug.Log($"[SaveManager] Manual save: {json}");
+    }
+
+    private void AutoSave()
+    {
+        string json = BuildSaveJson();
+        PlayerPrefs.SetString(SAVE_KEY, json);
+        PlayerPrefs.Save();
+        // Quiet notification for auto-save (pickup channel = small and brief)
+        NotificationManager.Instance?.ShowPickup("Auto-saved.");
+        Debug.Log("[SaveManager] Auto-saved.");
+    }
+
+    private string BuildSaveJson()
     {
         var data = new GameSaveData
         {
@@ -78,17 +117,11 @@ public class SaveManager : MonoBehaviour
             hullPlatingStageIndex = hullPlating?.CurrentStageIndex ?? 0,
             navigationStageIndex  = navigation?.CurrentStageIndex  ?? 0,
             engineCoreStageIndex  = engineCore?.CurrentStageIndex  ?? 0,
-            tetherUnlocked        = tetherGun?.gameObject.activeSelf   ?? false,
-            grenadeUnlocked       = grenadeGun?.gameObject.activeSelf  ?? false,
+            tetherUnlocked        = tetherGun?.gameObject.activeSelf    ?? false,
+            grenadeUnlocked       = grenadeGun?.gameObject.activeSelf   ?? false,
             thrusterUnlocked      = thrusterPack?.gameObject.activeSelf ?? false,
         };
-
-        string json = JsonUtility.ToJson(data);
-        PlayerPrefs.SetString(SAVE_KEY, json);
-        PlayerPrefs.Save();
-
-        NotificationManager.Instance?.ShowInfo("Game saved.");
-        Debug.Log($"[SaveManager] Saved: {json}");
+        return JsonUtility.ToJson(data);
     }
 
     public void Load()
@@ -100,28 +133,19 @@ public class SaveManager : MonoBehaviour
             NotificationManager.Instance?.ShowInfo("No save data found.");
             return;
         }
-
         try
         {
             var data = JsonUtility.FromJson<GameSaveData>(json);
-
-            // Restore module stages
             lifeSupport?.LoadStageIndex(data.lifeSupportStageIndex);
             hullPlating?.LoadStageIndex(data.hullPlatingStageIndex);
             navigation?.LoadStageIndex(data.navigationStageIndex);
             engineCore?.LoadStageIndex(data.engineCoreStageIndex);
-
-            // Restore gadget unlock state
             if (tetherGun    != null) tetherGun.gameObject.SetActive(data.tetherUnlocked);
             if (grenadeGun   != null) grenadeGun.gameObject.SetActive(data.grenadeUnlocked);
             if (thrusterPack != null) thrusterPack.gameObject.SetActive(data.thrusterUnlocked);
 
-            // ── ALWAYS RESTORE FULL OXYGEN ON LOAD ────────────────────────────
-            // Intentionally ignore data.oxygenNormalized.
-            // If the player died from oxygen depletion and loads from save,
-            // they should start fresh with full oxygen, not respawn already dying.
-            if (oxygenSystem != null)
-                oxygenSystem.RestoreFullOxygen();
+            // Always restore full oxygen on load
+            oxygenSystem?.RestoreFullOxygen();
 
             NotificationManager.Instance?.ShowInfo("Save loaded. Oxygen fully restored.");
             Debug.Log("[SaveManager] Loaded. Oxygen reset to full.");

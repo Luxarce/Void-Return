@@ -2,29 +2,30 @@ using UnityEngine;
 using System.Collections.Generic;
 
 /// <summary>
-/// Controls the minimap camera and marker overlays.
+/// Controls the minimap camera and all marker overlays.
 ///
-/// NEW FEATURES:
-///  — Shows active gravity rift markers (registered via RegisterRift()).
-///  — Shows active meteorite markers (registered via RegisterMeteorite()).
-///    Meteorite markers auto-remove when the meteorite is destroyed.
-///  — Shipwreck/module direction arrow on the minimap that points toward
-///    the ship even when it is off-screen (edge arrow).
-///  — Static singleton so MeteoriteManager can call Instance.RegisterRift().
+/// FIX — SHIPWRECK MARKER MISSING:
+///  CreateShipwreckMarker() is now called explicitly and logs to the Console
+///  if shipwreckTransform is null (the most common reason the marker doesn't appear).
+///
+/// FIX — ZONE REPORTING TO METEORITEMANAGER:
+///  The player's current zone number is forwarded to MeteoriteManager each time
+///  the minimap detects the player (via ZoneTrigger calling back here).
+///  Actually zone forwarding is done directly in ZoneTrigger — see that script.
 /// </summary>
 public class MinimapController : MonoBehaviour
 {
     public static MinimapController Instance { get; private set; }
 
     [Header("Camera")]
-    public Camera minimapCamera;
-    public Camera mainCamera;
-    public float  minimapCameraSize = 60f;
+    public Camera    minimapCamera;
+    public Camera    mainCamera;
+    public float     minimapCameraSize = 60f;
     public Transform playerTransform;
     [Range(1f, 20f)] public float followSpeed = 8f;
 
     [Header("Minimap Layer")]
-    [Tooltip("Layer index for 'Minimap' layer. Set in Edit > Project Settings > Tags and Layers.")]
+    [Tooltip("Layer index of the 'Minimap' layer (Edit > Project Settings > Tags and Layers). Usually 8.")]
     public int minimapLayerIndex = 8;
 
     [Header("Material Markers")]
@@ -33,16 +34,11 @@ public class MinimapController : MonoBehaviour
     [Range(0f, 30f)] public float autoRefreshInterval = 5f;
 
     [Header("Rift Markers")]
-    [Tooltip("Prefab for the gravity rift marker on the minimap (red dot or icon).")]
     public GameObject riftMarkerPrefab;
-
-    [Tooltip("Color of auto-generated rift markers (used when riftMarkerPrefab is null).")]
     public Color riftMarkerColor = new Color(1f, 0.15f, 0.1f);
 
     [Header("Meteorite Markers")]
-    [Tooltip("Prefab for active meteorite markers on the minimap (orange arrow or dot).")]
     public GameObject meteoriteMarkerPrefab;
-    [Tooltip("Color of auto-generated meteorite markers.")]
     public Color meteoriteMarkerColor = new Color(1f, 0.5f, 0f);
 
     [Header("Player Marker")]
@@ -50,26 +46,20 @@ public class MinimapController : MonoBehaviour
     public Color playerMarkerColor = new Color(1f, 0.3f, 0.2f);
 
     [Header("Shipwreck Direction Marker")]
-    [Tooltip("The Transform of the shipwreck or a central module (e.g., LifeSupport). " +
-             "A direction arrow will point toward this from the player position.")]
+    [Tooltip("REQUIRED: Drag the LifeSupport repair point Transform here. " +
+             "Without this, the shipwreck arrow will not appear on the minimap.")]
     public Transform shipwreckTransform;
 
-    [Tooltip("Prefab for the shipwreck direction arrow marker on the minimap.")]
     public GameObject shipwreckMarkerPrefab;
-
-    [Tooltip("Color of the auto-generated shipwreck direction arrow.")]
-    public Color shipwreckMarkerColor = new Color(0.2f, 0.7f, 1f);
-
-    [Tooltip("Distance from the minimap center at which the shipwreck arrow is pinned " +
-             "(when the wreck is outside the minimap view). World units.")]
-    public float shipwreckEdgePinRadius = 55f;
+    public Color      shipwreckMarkerColor    = new Color(0.2f, 0.7f, 1f);
+    public float      shipwreckEdgePinRadius  = 55f;
 
     [Header("Marker Sizes (world units)")]
-    public float markerScale         = 6f;
-    public float playerMarkerScale   = 8f;
-    public float riftMarkerScale     = 10f;
-    public float meteoriteMarkerScale = 7f;
-    public float shipwreckMarkerScale = 9f;
+    public float markerScale          = 8f;
+    public float playerMarkerScale    = 10f;
+    public float riftMarkerScale      = 12f;
+    public float meteoriteMarkerScale = 9f;
+    public float shipwreckMarkerScale = 11f;
 
     // ─────────────────────────────────────────────────────────────────────────
     private bool       _markersUnlocked;
@@ -78,10 +68,9 @@ public class MinimapController : MonoBehaviour
     private float      _refreshTimer;
     private Transform  _markerContainer;
 
-    private readonly List<GameObject> _materialMarkers  = new();
-    private readonly List<GameObject> _riftMarkers      = new();
-    // Meteorite markers are tracked alongside the Meteorite component
-    private readonly Dictionary<Meteorite, GameObject> _meteoriteMarkers = new();
+    private readonly List<GameObject>                   _materialMarkers  = new();
+    private readonly List<GameObject>                   _riftMarkers      = new();
+    private readonly Dictionary<Meteorite, GameObject>  _meteoriteMarkers = new();
 
     // ─────────────────────────────────────────────────────────────────────────
 
@@ -98,7 +87,7 @@ public class MinimapController : MonoBehaviour
         SetupCamera();
         CreateMarkerContainer();
         CreatePlayerMarker();
-        CreateShipwreckMarker();
+        CreateShipwreckMarker();      // Now logs clearly if missing
         if (_markersUnlocked) RefreshMaterialMarkers();
     }
 
@@ -119,13 +108,13 @@ public class MinimapController : MonoBehaviour
     {
         int mask = 1 << minimapLayerIndex;
         if (minimapCamera != null) minimapCamera.cullingMask = mask;
-        if (mainCamera == null)   mainCamera = Camera.main;
-        if (mainCamera != null)   mainCamera.cullingMask &= ~mask;
+        if (mainCamera == null)    mainCamera = Camera.main;
+        if (mainCamera != null)    mainCamera.cullingMask &= ~mask;
     }
 
     private void SetupCamera()
     {
-        if (minimapCamera == null) return;
+        if (minimapCamera == null) { Debug.LogWarning("[MinimapController] minimapCamera not assigned."); return; }
         minimapCamera.orthographic     = true;
         minimapCamera.orthographicSize = minimapCameraSize;
         minimapCamera.clearFlags       = CameraClearFlags.SolidColor;
@@ -134,16 +123,14 @@ public class MinimapController : MonoBehaviour
 
     private void CreateMarkerContainer()
     {
-        var go       = new GameObject("_MinimapMarkers");
-        _markerContainer = go.transform;
+        _markerContainer = new GameObject("_MinimapMarkers").transform;
     }
 
     private void CreatePlayerMarker()
     {
         if (playerTransform == null) return;
         _playerMarkerInstance = playerMarkerPrefab != null
-            ? Instantiate(playerMarkerPrefab, playerTransform.position,
-                          Quaternion.identity, _markerContainer)
+            ? Instantiate(playerMarkerPrefab, playerTransform.position, Quaternion.identity, _markerContainer)
             : CreateDot("PlayerDot", playerMarkerColor, playerMarkerScale);
         if (playerMarkerPrefab == null)
             _playerMarkerInstance.transform.SetParent(_markerContainer);
@@ -152,14 +139,25 @@ public class MinimapController : MonoBehaviour
 
     private void CreateShipwreckMarker()
     {
-        if (shipwreckTransform == null) return;
+        if (shipwreckTransform == null)
+        {
+            Debug.LogWarning("[MinimapController] shipwreckTransform is NOT assigned. " +
+                             "The shipwreck direction arrow will not appear on the minimap. " +
+                             "Select the MinimapController in the Inspector and drag the " +
+                             "LifeSupport repair point Transform into the 'Shipwreck Transform' field.");
+            return;
+        }
+
         _shipwreckMarkerInstance = shipwreckMarkerPrefab != null
             ? Instantiate(shipwreckMarkerPrefab, shipwreckTransform.position,
                           Quaternion.identity, _markerContainer)
             : CreateDot("ShipwreckDot", shipwreckMarkerColor, shipwreckMarkerScale);
+
         if (shipwreckMarkerPrefab == null)
             _shipwreckMarkerInstance.transform.SetParent(_markerContainer);
+
         SetMinimapLayer(_shipwreckMarkerInstance);
+        Debug.Log($"[MinimapController] Shipwreck marker created at {shipwreckTransform.position}");
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -177,7 +175,6 @@ public class MinimapController : MonoBehaviour
     {
         foreach (var m in _materialMarkers) if (m != null) Destroy(m);
         _materialMarkers.Clear();
-
         if (!_markersUnlocked) return;
 
         foreach (var pickup in FindObjectsByType<MaterialPickup>(FindObjectsSortMode.None))
@@ -186,8 +183,7 @@ public class MinimapController : MonoBehaviour
                 ? Instantiate(materialMarkerPrefab, pickup.transform.position,
                               Quaternion.identity, _markerContainer)
                 : CreateDot("MatDot", new Color(1f, 0.85f, 0.1f), markerScale);
-            if (materialMarkerPrefab == null)
-                marker.transform.SetParent(_markerContainer);
+            if (materialMarkerPrefab == null) marker.transform.SetParent(_markerContainer);
             marker.transform.position   = pickup.transform.position;
             marker.transform.localScale = Vector3.one * markerScale;
             SetMinimapLayer(marker);
@@ -195,44 +191,27 @@ public class MinimapController : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// Called by MeteoriteManager when a gravity rift is created.
-    /// Adds a red rift marker on the minimap that lives for lifetimeSeconds.
-    /// </summary>
     public void RegisterRift(Vector2 worldPos, float lifetimeSeconds)
     {
         var marker = riftMarkerPrefab != null
             ? Instantiate(riftMarkerPrefab, worldPos, Quaternion.identity, _markerContainer)
             : CreateDot("RiftDot", riftMarkerColor, riftMarkerScale);
-
-        if (riftMarkerPrefab == null)
-            marker.transform.SetParent(_markerContainer);
-
+        if (riftMarkerPrefab == null) marker.transform.SetParent(_markerContainer);
         marker.transform.position   = worldPos;
         marker.transform.localScale = Vector3.one * riftMarkerScale;
         SetMinimapLayer(marker);
         _riftMarkers.Add(marker);
-
-        // Auto-destroy after the rift expires
         Destroy(marker, lifetimeSeconds + 1f);
     }
 
-    /// <summary>
-    /// Called by MeteoriteManager when a meteorite is launched.
-    /// Tracks the meteorite and shows its position on the minimap until it impacts.
-    /// </summary>
     public void RegisterMeteorite(Meteorite meteorite)
     {
         if (meteorite == null) return;
-
         var marker = meteoriteMarkerPrefab != null
             ? Instantiate(meteoriteMarkerPrefab, meteorite.transform.position,
                           Quaternion.identity, _markerContainer)
             : CreateDot("MeteoriteDot", meteoriteMarkerColor, meteoriteMarkerScale);
-
-        if (meteoriteMarkerPrefab == null)
-            marker.transform.SetParent(_markerContainer);
-
+        if (meteoriteMarkerPrefab == null) marker.transform.SetParent(_markerContainer);
         marker.transform.localScale = Vector3.one * meteoriteMarkerScale;
         SetMinimapLayer(marker);
         _meteoriteMarkers[meteorite] = marker;
@@ -263,44 +242,28 @@ public class MinimapController : MonoBehaviour
         if (_shipwreckMarkerInstance == null || shipwreckTransform == null
             || playerTransform == null) return;
 
-        Vector2 toShip = (Vector2)shipwreckTransform.position
-                       - (Vector2)playerTransform.position;
-        float dist = toShip.magnitude;
+        Vector2 toShip = (Vector2)shipwreckTransform.position - (Vector2)playerTransform.position;
+        float   dist   = toShip.magnitude;
 
-        // If shipwreck is within the minimap view, place marker at its real position
-        if (dist <= shipwreckEdgePinRadius)
-        {
-            _shipwreckMarkerInstance.transform.position = shipwreckTransform.position;
-        }
-        else
-        {
-            // Pin to the edge of the minimap view in the direction of the ship
-            Vector2 pinPos = (Vector2)playerTransform.position
-                           + toShip.normalized * shipwreckEdgePinRadius;
-            _shipwreckMarkerInstance.transform.position = pinPos;
-        }
+        Vector2 markerPos = dist <= shipwreckEdgePinRadius
+            ? (Vector2)shipwreckTransform.position
+            : (Vector2)playerTransform.position + toShip.normalized * shipwreckEdgePinRadius;
 
-        // Rotate the marker to point toward the ship
+        _shipwreckMarkerInstance.transform.position = markerPos;
+
         float angle = Mathf.Atan2(toShip.y, toShip.x) * Mathf.Rad2Deg;
         _shipwreckMarkerInstance.transform.rotation = Quaternion.Euler(0f, 0f, angle - 90f);
     }
 
     private void CleanStaleMeteorites()
     {
-        // Remove markers for meteorites that have been destroyed
         var toRemove = new List<Meteorite>();
         foreach (var kv in _meteoriteMarkers)
         {
-            if (kv.Key == null) // meteorite was destroyed
-            {
-                if (kv.Value != null) Destroy(kv.Value);
-                toRemove.Add(kv.Key);
-            }
+            if (kv.Key == null)
+            { if (kv.Value != null) Destroy(kv.Value); toRemove.Add(kv.Key); }
             else if (kv.Value != null)
-            {
-                // Update position while alive
                 kv.Value.transform.position = kv.Key.transform.position;
-            }
         }
         foreach (var k in toRemove) _meteoriteMarkers.Remove(k);
     }
@@ -312,8 +275,6 @@ public class MinimapController : MonoBehaviour
         if (_refreshTimer >= autoRefreshInterval) { _refreshTimer = 0f; RefreshMaterialMarkers(); }
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // Utilities
     // ─────────────────────────────────────────────────────────────────────────
 
     private void SetMinimapLayer(GameObject go)

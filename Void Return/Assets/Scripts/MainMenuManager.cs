@@ -101,7 +101,7 @@ public class MainMenuManager : MonoBehaviour
         }
 
         // Check if a save file exists to enable/disable Continue
-        bool hasSave = PlayerPrefs.HasKey("VoidReturn_Save");
+        bool hasSave = SaveManager.SaveFileExists();
         if (continueButton != null)
             continueButton.interactable = hasSave;
     }

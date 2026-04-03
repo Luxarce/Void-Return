@@ -1,13 +1,8 @@
 using UnityEngine;
 
 /// <summary>
-/// Wires all cross-system events in code at runtime.
-///
-/// FIX — PROGRESS BARS NOT UPDATING:
-///  Added explicit validation that logs which references are null.
-///  The most common cause of bars not updating is gameHUD being null or
-///  moduleProgressSliders not being assigned in the GameHUD Inspector.
-///  Both are now logged as errors with clear messages.
+/// Central event-wiring hub.
+/// Also wires ZoneTrigger to MeteoriteManager for zone-specific events.
 /// </summary>
 public class GameManager : MonoBehaviour
 {
@@ -24,13 +19,13 @@ public class GameManager : MonoBehaviour
     public ShipModule engineCore;
 
     [Header("Managers")]
-    public ShipRepairManager   shipRepairManager;
-    public EndingManager       endingManager;
-    public MeteoriteManager    meteoriteManager;
+    public ShipRepairManager    shipRepairManager;
+    public EndingManager        endingManager;
+    public MeteoriteManager     meteoriteManager;
 
     [Header("UI Systems")]
-    public NotificationManager   notificationManager;
-    public InventoryUI           inventoryUI;
+    public NotificationManager    notificationManager;
+    public InventoryUI            inventoryUI;
     public MaterialRequirementsUI requirementsUI;
 
     [Header("Audio")]
@@ -44,9 +39,7 @@ public class GameManager : MonoBehaviour
         WireModuleEvents();
         WireRepairManagerEvents();
         WireMeteoriteEvents();
-
         requirementsUI?.RefreshAll();
-
         Debug.Log("[GameManager] All events wired.");
     }
 
@@ -88,27 +81,24 @@ public class GameManager : MonoBehaviour
     {
         if (module == null) { Warn($"ShipModule [{displayName}]"); return; }
 
-        // Progress bar update
         if (gameHUD != null)
         {
             int captured = index;
             module.onProgressChanged.AddListener(p =>
             {
-                Debug.Log($"[GameManager] {displayName} progress -> {p:P0} -> sending to HUD[{captured}]");
+                Debug.Log($"[GameManager] {displayName} onProgressChanged({p:F3}) -> UpdateModuleProgress({captured})");
                 gameHUD.UpdateModuleProgress(captured, p);
             });
         }
         else
         {
-            Debug.LogError("[GameManager] gameHUD is not assigned — module progress bars will NOT update. " +
-                           "Drag the GameHUD component into the GameManager Inspector.");
+            Debug.LogError("[GameManager] gameHUD is null — progress bars will NOT update. " +
+                           "Drag the GameHUD into the GameManager Inspector.");
         }
 
-        // Requirements panel refresh
         if (requirementsUI != null)
             module.onProgressChanged.AddListener(_ => requirementsUI.RefreshAll());
 
-        // Repair manager notification
         if (shipRepairManager != null)
         {
             ModuleType capturedType = type;
@@ -116,34 +106,25 @@ public class GameManager : MonoBehaviour
                 shipRepairManager.OnModuleRepaired(capturedType));
         }
 
-        // Repair SFX
-        module.onProgressChanged.AddListener(_ =>
-            audioManager?.PlaySFX("repair_stage"));
+        module.onProgressChanged.AddListener(_ => audioManager?.PlaySFX("repair_stage"));
     }
 
     private void WireRepairManagerEvents()
     {
         if (shipRepairManager == null) { Warn("shipRepairManager"); return; }
-
         if (endingManager != null)
-            shipRepairManager.onAllModulesRepaired.AddListener(
-                endingManager.TriggerEscapeEnding);
+            shipRepairManager.onAllModulesRepaired.AddListener(endingManager.TriggerEscapeEnding);
     }
 
     private void WireMeteoriteEvents()
     {
         if (meteoriteManager == null) return;
-
-        meteoriteManager.onShowerStart.AddListener(() =>
-            audioManager?.PlayMusic("tension_zone2"));
-
-        meteoriteManager.onRiftStart.AddListener(() =>
-            audioManager?.PlayMusic("danger_zone3"));
+        meteoriteManager.onShowerStart.AddListener(() => audioManager?.PlayMusic("tension_zone2"));
+        meteoriteManager.onRiftStart.AddListener(()   => audioManager?.PlayMusic("danger_zone3"));
     }
 
     // ─────────────────────────────────────────────────────────────────────────
 
     private void Warn(string field) =>
-        Debug.LogWarning($"[GameManager] '{field}' is not assigned. " +
-                         "Drag it into the GameManager Inspector.");
+        Debug.LogWarning($"[GameManager] '{field}' is not assigned in Inspector.");
 }
