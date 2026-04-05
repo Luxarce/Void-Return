@@ -1,22 +1,22 @@
 using UnityEngine;
 
 /// <summary>
-/// Main player movement, gadget controller, and animation driver.
+/// Main player movement and gadget controller.
 ///
-/// THRUSTER CHANGES:
-///  — gadgetKeyThruster = KeyCode.Space (was V).
-///  — Thruster is activated by HOLDING either Space or LMB (no tap/dash).
-///  — BeginThrust() called every frame the key/button is held.
-///  — EndThrust() called on key/button release.
-///  — Pressing Space while the Thruster gadget is already selected activates it.
-///  — Space does NOT select the thruster if another gadget is active —
-///    it only activates the thruster when gadget slot 3 is selected.
+/// THRUSTER KEYBIND: Space bar ONLY. LMB no longer activates thrust.
+///
+/// TILT FIX:
+///  Previous: Mathf.Atan2(td.x, -td.y) — wrong axis order, causing inverted tilt.
+///  Fixed: Mathf.Atan2(td.x, td.y) with a sign flip based on horizontal direction.
+///  The player leans FORWARD in the direction of movement:
+///    Moving right (+X) → tilts clockwise (negative Z angle)
+///    Moving left  (-X) → tilts counter-clockwise (positive Z angle)
+///    Moving up         → no tilt (straight ahead)
 /// </summary>
 [RequireComponent(typeof(Rigidbody2D), typeof(Animator))]
 public class PlayerController : MonoBehaviour
 {
-    // ─────────────────────────────────────────────────────────────────────────
-    [Header("Movement — Surface (Gravity Boots)")]
+    [Header("Movement — Surface")]
     public float walkSpeed   = 5f;
     public float surfaceDrag = 5f;
 
@@ -31,6 +31,15 @@ public class PlayerController : MonoBehaviour
     public float uprightThreshold   = 1.5f;
     [Range(0f, 180f)] public float maxTiltDegrees = 90f;
 
+    [Header("Thruster Tilt")]
+    [Tooltip("Max degrees the player leans in the thrust direction. Recommended: 15-25.")]
+    [Range(0f, 45f)]
+    public float thrusterTiltMaxAngle = 20f;
+
+    [Tooltip("How fast the tilt transitions. Higher = snappier.")]
+    [Range(1f, 20f)]
+    public float thrusterTiltSpeed = 6f;
+
     [Header("Ground Detection")]
     public LayerMask groundLayer;
     [Range(0.05f, 0.5f)] public float groundCheckRadius = 0.2f;
@@ -43,10 +52,10 @@ public class PlayerController : MonoBehaviour
     public ThrusterPack           thrusterPack;
 
     [Header("Gadget Keys")]
-    public KeyCode gadgetKeyBoots    = KeyCode.Q;
-    public KeyCode gadgetKeyTether   = KeyCode.F;
-    public KeyCode gadgetKeyGrenade  = KeyCode.G;
-    [Tooltip("Key to SELECT the thruster slot. HOLD this key (or LMB) to activate boost.")]
+    public KeyCode gadgetKeyBoots   = KeyCode.Q;
+    public KeyCode gadgetKeyTether  = KeyCode.F;
+    public KeyCode gadgetKeyGrenade = KeyCode.G;
+    [Tooltip("Space bar only. Hold to boost. Pressing when another slot is active switches to Thruster slot.")]
     public KeyCode gadgetKeyThruster = KeyCode.Space;
 
     public bool allowScrollCycle = true;
@@ -69,6 +78,7 @@ public class PlayerController : MonoBehaviour
     private bool  _isGrounded;
     private float _inputH, _inputV;
     private int   _activeGadgetIndex;
+    private float _currentTiltAngle;
 
     private static readonly int H_IsWalking     = Animator.StringToHash("IsWalking");
     private static readonly int H_IsFloating    = Animator.StringToHash("IsFloating");
@@ -109,7 +119,7 @@ public class PlayerController : MonoBehaviour
         ApplyMovement();
         ApplyZoneGravityForces();
         ClampZeroGVelocity();
-        SmoothRotationToGravity();
+        ApplyRotation();
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -127,10 +137,6 @@ public class PlayerController : MonoBehaviour
         GadgetHUDManager.Instance?.SetGadgetAvailable(3, enableThrusterAtStart);
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // Input
-    // ─────────────────────────────────────────────────────────────────────────
-
     private void GatherInput()
     {
         _inputH = Input.GetAxisRaw("Horizontal");
@@ -139,19 +145,11 @@ public class PlayerController : MonoBehaviour
 
     private void HandleGadgetSwitch()
     {
-        if (Input.GetKeyDown(gadgetKeyBoots))
-        { if (_activeGadgetIndex == 0) ActivateGadgetClick(); else SwitchGadget(0); }
-        if (Input.GetKeyDown(gadgetKeyTether))
-        { if (_activeGadgetIndex == 1) ActivateGadgetClick(); else SwitchGadget(1); }
-        if (Input.GetKeyDown(gadgetKeyGrenade))
-        { if (_activeGadgetIndex == 2) ActivateGadgetClick(); else SwitchGadget(2); }
-        if (Input.GetKeyDown(gadgetKeyThruster))
-        {
-            // Space: if thruster slot already selected — begin thrust
-            // If another slot is selected — switch to thruster
-            if (_activeGadgetIndex == 3) { /* hold handled below */ }
-            else SwitchGadget(3);
-        }
+        if (Input.GetKeyDown(gadgetKeyBoots)    && _activeGadgetIndex != 0) SwitchGadget(0);
+        if (Input.GetKeyDown(gadgetKeyTether)   && _activeGadgetIndex != 1) SwitchGadget(1);
+        if (Input.GetKeyDown(gadgetKeyGrenade)  && _activeGadgetIndex != 2) SwitchGadget(2);
+        // Space switches to thruster slot if another slot is active
+        if (Input.GetKeyDown(gadgetKeyThruster) && _activeGadgetIndex != 3) SwitchGadget(3);
 
         if (allowScrollCycle)
         {
@@ -163,28 +161,23 @@ public class PlayerController : MonoBehaviour
 
     private void HandleGadgetActivate()
     {
-        bool thrusterSlotActive = _activeGadgetIndex == 3
+        bool thrusterSlot = _activeGadgetIndex == 3
             && thrusterPack != null && thrusterPack.gameObject.activeSelf;
 
-        // ── Mouse button DOWN — non-thruster gadgets fire on click ─────────
-        if (Input.GetMouseButtonDown(0) && !thrusterSlotActive)
+        // Non-thruster gadgets: activate on LMB click
+        if (Input.GetMouseButtonDown(0) && !thrusterSlot)
             ActivateGadgetClick();
 
-        // ── THRUSTER: HOLD either Space or LMB to boost ────────────────────
-        bool thrustKeyHeld    = Input.GetKey(gadgetKeyThruster);
-        bool thrustMouseHeld  = Input.GetMouseButton(0);
-        bool thrustInputActive = thrusterSlotActive && (thrustKeyHeld || thrustMouseHeld);
+        // Thruster: SPACE BAR ONLY (not LMB)
+        bool spaceHeld = Input.GetKey(gadgetKeyThruster);
 
-        if (thrustInputActive)
+        if (thrusterSlot && spaceHeld)
         {
             Vector2 dir = new Vector2(_inputH, _inputV).normalized;
             if (dir.sqrMagnitude < 0.01f) dir = GetAimDirection();
             thrusterPack.BeginThrust(dir);
         }
-
-        // Release thruster when both Space and LMB are released
-        if (thrusterSlotActive && !thrustKeyHeld && !thrustMouseHeld
-            && (Input.GetKeyUp(gadgetKeyThruster) || Input.GetMouseButtonUp(0)))
+        else if (thrusterSlot && thrusterPack.IsActive && !spaceHeld)
         {
             thrusterPack.EndThrust();
         }
@@ -195,18 +188,9 @@ public class PlayerController : MonoBehaviour
         _anim.SetTrigger(H_UseGadget);
         switch (_activeGadgetIndex)
         {
-            case 0:
-                if (gravityBoots != null && gravityBoots.enabled)
-                    gravityBoots.Toggle();
-                break;
-            case 1:
-                if (tetherGun != null && tetherGun.gameObject.activeSelf)
-                    tetherGun.Fire(GetAimDirection());
-                break;
-            case 2:
-                if (grenadeGun != null && grenadeGun.gameObject.activeSelf)
-                    grenadeGun.Launch(GetAimDirection());
-                break;
+            case 0: if (gravityBoots != null && gravityBoots.enabled) gravityBoots.Toggle(); break;
+            case 1: if (tetherGun != null && tetherGun.gameObject.activeSelf) tetherGun.Fire(GetAimDirection()); break;
+            case 2: if (grenadeGun != null && grenadeGun.gameObject.activeSelf) grenadeGun.Launch(GetAimDirection()); break;
         }
     }
 
@@ -230,22 +214,18 @@ public class PlayerController : MonoBehaviour
 
     private void CheckGround()
     {
-        Vector2 offset   = (Vector2)(transform.rotation * (Vector3)groundCheckOffset);
-        _isGrounded      = Physics2D.OverlapCircle(
-            (Vector2)transform.position + offset, groundCheckRadius, groundLayer);
+        Vector2 offset = (Vector2)(transform.rotation * (Vector3)groundCheckOffset);
+        _isGrounded    = Physics2D.OverlapCircle((Vector2)transform.position + offset, groundCheckRadius, groundLayer);
     }
 
     private void ApplyMovement()
     {
         bool bootsOn = gravityBoots != null && gravityBoots.enabled && gravityBoots.IsActive;
-
         if (_isGrounded && bootsOn)
         {
             Vector2 walkDir = _zoneGravity.sqrMagnitude > 0.01f
-                ? new Vector2(-_zoneGravity.normalized.y, _zoneGravity.normalized.x)
-                : Vector2.right;
-            float down = Mathf.Min(_rb.linearVelocity.y, 0f);
-            _rb.linearVelocity = walkDir * (_inputH * walkSpeed) + Vector2.up * down;
+                ? new Vector2(-_zoneGravity.normalized.y, _zoneGravity.normalized.x) : Vector2.right;
+            _rb.linearVelocity = walkDir * (_inputH * walkSpeed) + Vector2.up * Mathf.Min(_rb.linearVelocity.y, 0f);
             _rb.linearDamping  = surfaceDrag;
         }
         else if (_zoneGravity.sqrMagnitude > 0.01f && _gravState != GravityState.ZeroG)
@@ -256,8 +236,7 @@ public class PlayerController : MonoBehaviour
         else
         {
             Vector2 dir = new Vector2(_inputH, _inputV).normalized;
-            if (dir.sqrMagnitude > 0.01f)
-                _rb.AddForce(dir * thrustForce, ForceMode2D.Force);
+            if (dir.sqrMagnitude > 0.01f) _rb.AddForce(dir * thrustForce, ForceMode2D.Force);
             _rb.linearDamping = zeroGDrag;
         }
     }
@@ -276,29 +255,51 @@ public class PlayerController : MonoBehaviour
             _rb.linearVelocity = _rb.linearVelocity.normalized * maxZeroGSpeed;
     }
 
-    private void SmoothRotationToGravity()
+    private void ApplyRotation()
     {
         if (_isRiftDisoriented) return;
         _rb.angularVelocity = 0f;
 
+        bool isThrusting = thrusterPack != null && thrusterPack.IsActive;
+
+        if (isThrusting)
+        {
+            Vector2 td = thrusterPack.ThrustDirection;
+            if (td.sqrMagnitude > 0.01f)
+            {
+                // CORRECT TILT: lean in direction of horizontal movement.
+                // Positive X (moving right) → tilt right (negative Z angle in Unity's left-hand coords)
+                // Negative X (moving left)  → tilt left  (positive Z angle)
+                float horizontalComponent = td.x;
+                float targetTilt          = -horizontalComponent * thrusterTiltMaxAngle;
+                _currentTiltAngle = Mathf.LerpAngle(_currentTiltAngle, targetTilt,
+                                                     thrusterTiltSpeed * Time.fixedDeltaTime);
+                transform.rotation = Quaternion.Euler(0f, 0f, _currentTiltAngle);
+                return;
+            }
+        }
+
+        // Return tilt to 0 when not thrusting
+        _currentTiltAngle = Mathf.LerpAngle(_currentTiltAngle, 0f, thrusterTiltSpeed * Time.fixedDeltaTime);
+
+        // Normal gravity-aligned rotation
         float speed = _rb.linearVelocity.magnitude;
         float gravAngle = 0f;
         if (_zoneGravity.sqrMagnitude > 0.01f)
         {
-            Vector2 g = _zoneGravity.normalized;
-            float raw = Mathf.Atan2(-g.x, g.y) * Mathf.Rad2Deg;
-            gravAngle = Mathf.Clamp(Mathf.DeltaAngle(0f, raw), -maxTiltDegrees, maxTiltDegrees);
+            Vector2 g   = _zoneGravity.normalized;
+            float raw   = Mathf.Atan2(-g.x, g.y) * Mathf.Rad2Deg;
+            gravAngle   = Mathf.Clamp(Mathf.DeltaAngle(0f, raw), -maxTiltDegrees, maxTiltDegrees);
         }
-
-        bool isSlowing = speed < uprightThreshold;
-        float target   = isSlowing
+        bool isSlowing  = speed < uprightThreshold;
+        float target    = isSlowing
             ? Mathf.LerpAngle(gravAngle, 0f, 1f - speed / Mathf.Max(uprightThreshold, 0.001f))
             : gravAngle;
-        float useSpeed = isSlowing ? uprightReturnSpeed : rotationSpeed;
-        float current  = transform.eulerAngles.z;
-        float signed   = current > 180f ? current - 360f : current;
+        float useSpeed  = isSlowing ? uprightReturnSpeed : rotationSpeed;
+        float current   = transform.eulerAngles.z;
+        float signed    = current > 180f ? current - 360f : current;
         transform.rotation = Quaternion.Euler(0f, 0f,
-            Mathf.MoveTowardsAngle(signed, target, useSpeed * Time.fixedDeltaTime));
+            Mathf.MoveTowardsAngle(signed, target + _currentTiltAngle, useSpeed * Time.fixedDeltaTime));
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -316,16 +317,10 @@ public class PlayerController : MonoBehaviour
     {
         bool walking   = _isGrounded && Mathf.Abs(_inputH) > 0.05f;
         bool floating  = !_isGrounded && _gravState == GravityState.ZeroG;
-        bool thrusting = thrusterPack != null
-                         && thrusterPack.gameObject.activeSelf
-                         && thrusterPack.IsActive;
-
-        _anim.SetBool(H_IsWalking,     walking);
-        _anim.SetBool(H_IsFloating,    floating);
-        _anim.SetBool(H_IsThrusting,   thrusting);
-        _anim.SetBool(H_IsDisoriented, _isRiftDisoriented);
-        _anim.SetFloat(H_SpeedX, _rb.linearVelocity.x);
-        _anim.SetFloat(H_SpeedY, _rb.linearVelocity.y);
+        bool thrusting = thrusterPack != null && thrusterPack.gameObject.activeSelf && thrusterPack.IsActive;
+        _anim.SetBool(H_IsWalking, walking); _anim.SetBool(H_IsFloating, floating);
+        _anim.SetBool(H_IsThrusting, thrusting); _anim.SetBool(H_IsDisoriented, _isRiftDisoriented);
+        _anim.SetFloat(H_SpeedX, _rb.linearVelocity.x); _anim.SetFloat(H_SpeedY, _rb.linearVelocity.y);
     }
 
     private void FlipSprite()

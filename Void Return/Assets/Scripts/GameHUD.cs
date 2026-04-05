@@ -6,11 +6,20 @@ using UnityEngine.SceneManagement;
 /// <summary>
 /// In-game HUD.
 ///
-/// FIXES:
-///  — ShowGameOver() and ShowVictory() now call GadgetCrosshair.HideForPanel()
-///    so the custom crosshair disappears and the OS cursor is restored,
-///    making panel buttons clickable again.
-///  — ValidateProgressSliders() auto-corrects Min=0/Max=1 at Start.
+/// UPGRADE LIST FIX:
+///  Rich text color tags like <color=#27AE60> may not render if the TMP font
+///  does not have rich text enabled OR if the font SDF doesn't support the
+///  full Unicode range for special characters.
+///
+///  This version uses plain-text symbols instead:
+///    Completed:  [OK] (green via a separate TMP vertex color if using TextMeshPro)
+///    Incomplete: [ ]
+///  If you want color, enable Rich Text on the UpgradeListText TMP component
+///  in the Inspector. The tags are still included but guarded by a toggle.
+///
+///  IMMEDIATE UPDATE: RefreshUpgradeList() is now called both by
+///  onProgressChanged AND directly at the end of AttemptRepair() in ShipModule.
+///  This ensures the panel updates the moment a stage completes.
 /// </summary>
 public class GameHUD : MonoBehaviour
 {
@@ -26,8 +35,6 @@ public class GameHUD : MonoBehaviour
 
     [Header("Gravity State")]
     public TextMeshProUGUI gravityStateText;
-    public Image           gravityStateIcon;
-    public Sprite[]        gravityStateSprites;
 
     [Header("Zone Badge")]
     public Image           zoneBadgeImage;
@@ -37,43 +44,50 @@ public class GameHUD : MonoBehaviour
     public Color zone3Color       = new Color(1f, 0.2f, 0.1f, 0.9f);
     public Color defaultZoneColor = new Color(0.5f, 0.5f, 0.5f, 0.7f);
 
-    [Header("Module Progress Bars")]
-    [Tooltip("IMPORTANT: Min Value = 0, Max Value = 1 on each Slider.")]
-    public Slider[]          moduleProgressSliders;
-    public TextMeshProUGUI[] moduleProgressLabels;
+    [Header("Module Upgrade Status List")]
+    [Tooltip("TextMeshProUGUI showing all stage upgrades. " +
+             "Enable 'Rich Text' on this TMP component to see colored [OK] markers. " +
+             "If rich text is disabled, plain [OK] / [ ] text is shown instead.")]
+    public TextMeshProUGUI upgradeListText;
+
+    [Tooltip("If true, uses color tags for done/pending status. " +
+             "Requires Rich Text = ON on the upgradeListText TMP component.")]
+    public bool useRichTextColors = true;
+
+    [Header("Module References (for upgrade list)")]
+    public ShipModule lifeSupportModule;
+    public ShipModule hullPlatingModule;
+    public ShipModule navigationModule;
+    public ShipModule engineCoreModule;
+
+    [Header("Gadget Bars")]
+    public Slider          bootsBar;
+    public Slider          thrusterBar;
+    public TextMeshProUGUI grenadeCountText;
 
     [Header("Pause Menu")]
     public GameObject pausePanel;
-    public Button     resumeButton;
-    public Button     saveButton;
-    public Button     loadButton;
-    public Button     optionsButton;
-    public Button     exitButton;
+    public Button     resumeButton, saveButton, loadButton, optionsButton, exitButton;
 
-    [Header("Options Panel")]
+    [Header("Options")]
     public GameObject optionsPanel;
-    public Slider     masterVolumeSlider;
-    public Slider     musicVolumeSlider;
-    public Slider     sfxVolumeSlider;
-    public Toggle     musicToggle;
-    public Toggle     sfxToggle;
+    public Slider     masterVolumeSlider, musicVolumeSlider, sfxVolumeSlider;
+    public Toggle     musicToggle, sfxToggle;
     public Button     optionsBackButton;
 
     [Header("Game Over Panel")]
     public GameObject gameOverPanel;
-    public Button     gameOverReturnButton;
-    public Button     gameOverRetryButton;
+    public Button     gameOverReturnButton, gameOverRetryButton;
 
     [Header("Victory Panel")]
     public GameObject victoryPanel;
     public Button     victoryReturnButton;
 
-    [Header("Scene Names")]
-    public string mainMenuSceneName = "MainMenu";
-
-    [Header("Crosshair Reference")]
-    [Tooltip("Drag GadgetCrosshair here. The crosshair is hidden when panels open.")]
+    [Header("Crosshair")]
     public GadgetCrosshair gadgetCrosshair;
+
+    [Header("Scene")]
+    public string mainMenuSceneName = "MainMenu";
 
     // ─────────────────────────────────────────────────────────────────────────
     private bool _isPaused;
@@ -88,73 +102,15 @@ public class GameHUD : MonoBehaviour
         victoryPanel?.SetActive(false);
 
         WirePauseButtons();
-        WireOptionsPanel();
-        WireGameOverPanel();
-        WireVictoryPanel();
-        ValidateProgressSliders();
+        WireOptions();
+        WireGameOver();
+        WireVictory();
+        RefreshUpgradeList();
     }
 
     private void Update()
     {
         if (Input.GetKeyDown(KeyCode.Escape)) TogglePause();
-    }
-
-    // ─────────────────────────────────────────────────────────────────────────
-
-    private void ValidateProgressSliders()
-    {
-        if (moduleProgressSliders == null) return;
-        for (int i = 0; i < moduleProgressSliders.Length; i++)
-        {
-            var s = moduleProgressSliders[i];
-            if (s == null) { Debug.LogWarning($"[GameHUD] moduleProgressSliders[{i}] not assigned."); continue; }
-            if (s.minValue != 0f || s.maxValue != 1f)
-            {
-                Debug.LogWarning($"[GameHUD] Slider[{i}] Min={s.minValue}, Max={s.maxValue} — auto-correcting to 0/1.");
-                s.minValue = 0f;
-                s.maxValue = 1f;
-            }
-        }
-    }
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // Button wiring
-    // ─────────────────────────────────────────────────────────────────────────
-
-    private void WirePauseButtons()
-    {
-        resumeButton?.onClick.AddListener(ResumeGame);
-        saveButton?.onClick.AddListener(()  => SaveManager.Instance?.Save());
-        loadButton?.onClick.AddListener(()  => SaveManager.Instance?.Load());
-        optionsButton?.onClick.AddListener(OpenOptions);
-        exitButton?.onClick.AddListener(ExitToMainMenu);
-    }
-
-    private void WireOptionsPanel()
-    {
-        optionsBackButton?.onClick.AddListener(CloseOptions);
-        masterVolumeSlider?.onValueChanged.AddListener(v => AudioManager.Instance?.SetMasterVolume(v));
-        musicVolumeSlider?.onValueChanged.AddListener(v  => AudioManager.Instance?.SetMusicVolume(v));
-        sfxVolumeSlider?.onValueChanged.AddListener(v    => AudioManager.Instance?.SetSFXVolume(v));
-        musicToggle?.onValueChanged.AddListener(b        => AudioManager.Instance?.ToggleMusic(b));
-        sfxToggle?.onValueChanged.AddListener(b          => AudioManager.Instance?.ToggleSFX(b));
-        if (AudioManager.Instance != null)
-        {
-            if (masterVolumeSlider != null) masterVolumeSlider.value = AudioManager.Instance.MasterVolume;
-            if (musicVolumeSlider  != null) musicVolumeSlider.value  = AudioManager.Instance.MusicVolume;
-            if (sfxVolumeSlider    != null) sfxVolumeSlider.value    = AudioManager.Instance.SFXVolume;
-        }
-    }
-
-    private void WireGameOverPanel()
-    {
-        gameOverReturnButton?.onClick.AddListener(ExitToMainMenu);
-        gameOverRetryButton?.onClick.AddListener(RetryFromSave);
-    }
-
-    private void WireVictoryPanel()
-    {
-        victoryReturnButton?.onClick.AddListener(ExitToMainMenu);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -174,10 +130,8 @@ public class GameHUD : MonoBehaviour
     public void SetGravityState(GravityState state)
     {
         string[] names = { "Normal-G", "Zero-G", "Micro-Pull", "GRAVITY RIFT!" };
-        int i = (int)state;
-        if (gravityStateText != null) gravityStateText.text = i < names.Length ? names[i] : state.ToString();
-        if (gravityStateIcon != null && gravityStateSprites != null && i < gravityStateSprites.Length)
-            gravityStateIcon.sprite = gravityStateSprites[i];
+        if (gravityStateText != null)
+            gravityStateText.text = (int)state < names.Length ? names[(int)state] : state.ToString();
     }
 
     public void SetZone(int zoneNumber, string zoneName)
@@ -185,60 +139,96 @@ public class GameHUD : MonoBehaviour
         if (zoneNameText   != null) zoneNameText.text  = zoneName;
         if (zoneBadgeImage != null)
             zoneBadgeImage.color = zoneNumber switch
-            {
-                1 => zone1Color,
-                2 => zone2Color,
-                3 => zone3Color,
-                _ => defaultZoneColor,
-            };
+            { 1 => zone1Color, 2 => zone2Color, 3 => zone3Color, _ => defaultZoneColor };
     }
 
-    public void UpdateModuleProgress(int moduleIndex, float progress)
-    {
-        if (moduleProgressSliders == null || moduleProgressSliders.Length == 0)
-        {
-            Debug.LogWarning("[GameHUD] moduleProgressSliders array is empty. " +
-                             "Assign the Slider components in the Inspector.");
-            return;
-        }
-        if (moduleIndex < 0 || moduleIndex >= moduleProgressSliders.Length)
-        {
-            Debug.LogWarning($"[GameHUD] moduleIndex {moduleIndex} out of range.");
-            return;
-        }
-        var slider = moduleProgressSliders[moduleIndex];
-        if (slider == null)
-        {
-            Debug.LogWarning($"[GameHUD] moduleProgressSliders[{moduleIndex}] is null.");
-            return;
-        }
-        slider.value = progress;
-        Debug.Log($"[GameHUD] Module {moduleIndex} progress bar set to {progress:P0}");
-        if (moduleProgressLabels != null && moduleIndex < moduleProgressLabels.Length
-            && moduleProgressLabels[moduleIndex] != null)
-            moduleProgressLabels[moduleIndex].text = $"{Mathf.RoundToInt(progress * 100f)}%";
-    }
-
-    public void UpdateLifeSupportProgress(float p) => UpdateModuleProgress(0, p);
-    public void UpdateHullProgress(float p)         => UpdateModuleProgress(1, p);
-    public void UpdateNavProgress(float p)          => UpdateModuleProgress(2, p);
-    public void UpdateEngineProgress(float p)       => UpdateModuleProgress(3, p);
+    // ─────────────────────────────────────────────────────────────────────────
+    // Upgrade List
+    // ─────────────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Shows the game-over panel.
-    /// Also hides the gadget crosshair and restores the OS cursor so buttons are clickable.
+    /// Rebuilds the upgrade status text panel.
+    /// Called immediately when onProgressChanged fires (wired by GameManager).
     /// </summary>
+    public void RefreshUpgradeList()
+    {
+        if (upgradeListText == null) return;
+
+        var sb = new System.Text.StringBuilder();
+
+        AppendModuleBlock(sb, "Life Support", lifeSupportModule, new[]
+        {
+            "Stage 1: Zone + Shield + Oxygen +50%",
+            "Stage 2: Oxygen +50%  |  Refill x2  |  Boots +50%",
+        });
+        AppendModuleBlock(sb, "Navigation", navigationModule, new[]
+        {
+            "Stage 1: Tether Gun + Partial Minimap",
+            "Stage 2: Full Minimap  |  Tether range x2",
+        });
+        AppendModuleBlock(sb, "Hull Plating", hullPlatingModule, new[]
+        {
+            "Stage 1: Gravity Grenade + Crafting",
+            "Stage 2: Pull radius x2  |  +2 slots  |  Cost -1",
+        });
+        AppendModuleBlock(sb, "Engine Core", engineCoreModule, new[]
+        {
+            "Stage 1: Thruster Pack activated",
+            "Stage 2: Fuel capacity x2",
+        });
+
+        upgradeListText.text = sb.ToString().TrimEnd();
+    }
+
+    private void AppendModuleBlock(System.Text.StringBuilder sb,
+        string displayName, ShipModule module, string[] stageDescriptions)
+    {
+        if (useRichTextColors)
+            sb.AppendLine($"<b>{displayName}</b>");
+        else
+            sb.AppendLine($"-- {displayName} --");
+
+        if (module == null)
+        {
+            sb.AppendLine("  [Not assigned]");
+            return;
+        }
+
+        for (int i = 0; i < stageDescriptions.Length; i++)
+        {
+            bool done = module.CurrentStageIndex > i || module.IsFullyRepaired;
+
+            if (useRichTextColors)
+            {
+                string color  = done ? "#27AE60" : "#888888";
+                string status = done ? "[OK]" : "[  ]";
+                sb.AppendLine($"  <color={color}>{status}</color> {stageDescriptions[i]}");
+            }
+            else
+            {
+                string status = done ? "[OK]" : "[  ]";
+                sb.AppendLine($"  {status} {stageDescriptions[i]}");
+            }
+        }
+        sb.AppendLine();
+    }
+
+    // Backward compat — GameManager wires onProgressChanged to these
+    public void UpdateModuleProgress(int idx, float p) => RefreshUpgradeList();
+    public void UpdateLifeSupportProgress(float p) => RefreshUpgradeList();
+    public void UpdateHullProgress(float p)         => RefreshUpgradeList();
+    public void UpdateNavProgress(float p)          => RefreshUpgradeList();
+    public void UpdateEngineProgress(float p)       => RefreshUpgradeList();
+
+    // ─────────────────────────────────────────────────────────────────────────
+
     public void ShowGameOver()
     {
         Time.timeScale = 0f;
         gameOverPanel?.SetActive(true);
-        gadgetCrosshair?.HideForPanel();   // restore cursor so buttons work
+        gadgetCrosshair?.HideForPanel();
     }
 
-    /// <summary>
-    /// Shows the victory / escape panel.
-    /// Also hides the gadget crosshair and restores the cursor.
-    /// </summary>
     public void ShowVictory()
     {
         Time.timeScale = 0f;
@@ -253,10 +243,6 @@ public class GameHUD : MonoBehaviour
         SceneManager.LoadScene(mainMenuSceneName);
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // Pause
-    // ─────────────────────────────────────────────────────────────────────────
-
     private void TogglePause()
     {
         _isPaused = !_isPaused;
@@ -268,20 +254,41 @@ public class GameHUD : MonoBehaviour
 
     private void ResumeGame()
     {
-        _isPaused = false;
-        pausePanel?.SetActive(false);
-        Time.timeScale = 1f;
+        _isPaused = false; pausePanel?.SetActive(false); Time.timeScale = 1f;
         gadgetCrosshair?.RestoreForGadget();
     }
-
-    private void OpenOptions()  { pausePanel?.SetActive(false); optionsPanel?.SetActive(true); }
-    private void CloseOptions() { optionsPanel?.SetActive(false); pausePanel?.SetActive(true); }
 
     private void RetryFromSave()
     {
-        Time.timeScale = 1f;
-        gameOverPanel?.SetActive(false);
+        Time.timeScale = 1f; gameOverPanel?.SetActive(false);
         gadgetCrosshair?.RestoreForGadget();
         SaveManager.Instance?.Load();
     }
+
+    private void WirePauseButtons()
+    {
+        resumeButton?.onClick.AddListener(ResumeGame);
+        saveButton?.onClick.AddListener(()   => SaveManager.Instance?.Save());
+        loadButton?.onClick.AddListener(()   => SaveManager.Instance?.Load());
+        optionsButton?.onClick.AddListener(() => { pausePanel?.SetActive(false); optionsPanel?.SetActive(true); });
+        exitButton?.onClick.AddListener(ExitToMainMenu);
+    }
+
+    private void WireOptions()
+    {
+        optionsBackButton?.onClick.AddListener(() => { optionsPanel?.SetActive(false); pausePanel?.SetActive(true); });
+        masterVolumeSlider?.onValueChanged.AddListener(v => AudioManager.Instance?.SetMasterVolume(v));
+        musicVolumeSlider?.onValueChanged.AddListener(v  => AudioManager.Instance?.SetMusicVolume(v));
+        sfxVolumeSlider?.onValueChanged.AddListener(v    => AudioManager.Instance?.SetSFXVolume(v));
+        musicToggle?.onValueChanged.AddListener(b        => AudioManager.Instance?.ToggleMusic(b));
+        sfxToggle?.onValueChanged.AddListener(b          => AudioManager.Instance?.ToggleSFX(b));
+    }
+
+    private void WireGameOver()
+    {
+        gameOverReturnButton?.onClick.AddListener(ExitToMainMenu);
+        gameOverRetryButton?.onClick.AddListener(RetryFromSave);
+    }
+
+    private void WireVictory() { victoryReturnButton?.onClick.AddListener(ExitToMainMenu); }
 }

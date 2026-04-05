@@ -159,8 +159,8 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 604.29, y: 275.328, z: -2.7123554}
-  m_LocalScale: {x: 0.25, y: 0.25, z: 1}
-  m_ConstrainProportionsScale: 0
+  m_LocalScale: {x: 0.5, y: 0.5, z: 2}
+  m_ConstrainProportionsScale: 1
   m_Children:
   - {fileID: 5815129206884303546}
   m_Father: {fileID: 0}
@@ -189,6 +189,10 @@ MonoBehaviour:
   launchSpeedMax: 5
   magnetRadius: 2.5
   magnetForce: 2
+  enableGlowPulse: 1
+  pulseSpeed: 2
+  pulseMinBrightness: 0.5
+  pulseMaxBrightness: 1.8
   pickupClip: {fileID: 8300000, guid: 2997157bf647b8d48954e487c9676b72, type: 3}
   pickupVolume: 1
 --- !u!212 &658546819845583940

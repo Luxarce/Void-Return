@@ -1,66 +1,34 @@
 using UnityEngine;
 
 /// <summary>
-/// Gravity Boots — a gravity-anchor gadget.
-///
-/// REDESIGN (no jump):
-///   When ACTIVE, applies a strong configurable downward force to the player's
-///   Rigidbody2D every FixedUpdate, keeping them firmly planted on any
-///   Ground-layer surface. This makes grounded walking work in any gravity zone.
-///
-///   The boots do NOT provide a jump ability. Remove all jump references
-///   from the PlayerController — jumping is no longer part of this gadget.
-///
-///   Think of the boots as an "anchor" — toggle ON to stick to surfaces,
-///   toggle OFF to return to Zero-G floating.
-///
-/// STAMINA:
-///   Drains while active, recharges when off.
-///   Shown as the blue bar in the Gadget HUD beneath the Boots slot.
+/// Gravity Boots — gravity anchor gadget.
+/// Boot particles play ONLY while boots are active. They stop on deactivation or stamina drain.
 /// </summary>
 public class GravityBoots : MonoBehaviour
 {
     [Header("Stamina")]
-    [Tooltip("Maximum duration boots can stay active (seconds).")]
     public float maxDuration  = 30f;
-
-    [Tooltip("Stamina drained per second while active.")]
     public float drainRate    = 1f;
-
-    [Tooltip("Stamina recharged per second while inactive.")]
     public float rechargeRate = 0.5f;
 
-    [Header("Boot Gravity Anchor")]
-    [Tooltip("Downward force applied to the player's Rigidbody2D per FixedUpdate while active.\n" +
-             "This is what keeps the player glued to the floor.\n" +
-             "Recommended: 25-50. Higher = stronger 'gravity feeling'.")]
+    [Header("Boot Gravity")]
     public float bootGravityStrength = 35f;
-
-    [Tooltip("Direction of the boot gravity. Default is straight down (0, -1).\n" +
-             "Change this at runtime to match angled surfaces if needed.")]
     public Vector2 bootGravityDirection = Vector2.down;
 
-    [Header("VFX & Audio")]
-    [Tooltip("Particle effect playing while boots are active (foot glow).")]
+    [Header("VFX")]
+    [Tooltip("Particle System that plays ONLY while boots are active. Set Play on Awake = OFF.")]
     public ParticleSystem bootParticles;
 
-    [Tooltip("AudioSource on this GameObject.")]
+    [Header("Audio")]
     public AudioSource audioSource;
-
-    [Tooltip("Sound played when toggling boots on or off.")]
-    public AudioClip toggleClip;
+    public AudioClip   toggleClip;
 
     // ─────────────────────────────────────────────────────────────────────────
-    private float        _stamina;
-    private bool         _isActive;
-    private Rigidbody2D  _playerRb;
+    private float       _stamina;
+    private bool        _isActive;
+    private Rigidbody2D _playerRb;
 
-    // ─────────────────────────────────────────────────────────────────────────
-
-    /// <summary>True when boots are on AND have remaining stamina.</summary>
-    public bool IsActive => _isActive && _stamina > 0f;
-
-    /// <summary>Stamina 0-1 for the HUD bar.</summary>
+    public bool  IsActive          => _isActive && _stamina > 0f;
     public float StaminaNormalized => maxDuration > 0f ? _stamina / maxDuration : 0f;
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -69,6 +37,12 @@ public class GravityBoots : MonoBehaviour
     {
         _stamina  = maxDuration;
         _playerRb = GetComponentInParent<Rigidbody2D>();
+    }
+
+    private void Start()
+    {
+        // Ensure particles are off at start
+        if (bootParticles != null) { bootParticles.Stop(); bootParticles.Clear(); }
     }
 
     private void Update()
@@ -87,20 +61,13 @@ public class GravityBoots : MonoBehaviour
         {
             _stamina = Mathf.Min(_stamina + rechargeRate * Time.deltaTime, maxDuration);
         }
-
         GadgetHUDManager.Instance?.UpdateBootsBar(StaminaNormalized);
     }
 
     private void FixedUpdate()
     {
-        // Apply the gravity anchor force every physics step while boots are on.
-        // This is what keeps the player on the ground in Zero-G environments.
         if (IsActive && _playerRb != null)
-        {
-            _playerRb.AddForce(
-                bootGravityDirection.normalized * bootGravityStrength,
-                ForceMode2D.Force);
-        }
+            _playerRb.AddForce(bootGravityDirection.normalized * bootGravityStrength, ForceMode2D.Force);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -116,26 +83,32 @@ public class GravityBoots : MonoBehaviour
         _stamina    += bonusSeconds;
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-
     private void Activate()
     {
-        if (_stamina <= 0f)
-        {
-            NotificationManager.Instance?.ShowInfo("Gravity Boots empty — wait for recharge.");
-            return;
-        }
+        if (_stamina <= 0f) { NotificationManager.Instance?.ShowInfo("Boots empty — recharging."); return; }
         _isActive = true;
-        bootParticles?.Play();
+        StartParticles();
         audioSource?.PlayOneShot(toggleClip);
-        NotificationManager.Instance?.ShowInfo("Gravity Boots ON — anchored to surface.");
+        NotificationManager.Instance?.ShowInfo("Gravity Boots ON");
     }
 
     private void Deactivate()
     {
         _isActive = false;
-        bootParticles?.Stop();
+        StopParticles();
         audioSource?.PlayOneShot(toggleClip);
-        NotificationManager.Instance?.ShowInfo("Gravity Boots OFF — returning to Zero-G.");
+        NotificationManager.Instance?.ShowInfo("Gravity Boots OFF");
+    }
+
+    private void StartParticles()
+    {
+        if (bootParticles == null) return;
+        if (!bootParticles.isPlaying) bootParticles.Play();
+    }
+
+    private void StopParticles()
+    {
+        if (bootParticles == null) return;
+        if (bootParticles.isPlaying) bootParticles.Stop();
     }
 }

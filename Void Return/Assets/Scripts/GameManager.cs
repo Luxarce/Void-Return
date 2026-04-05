@@ -1,8 +1,20 @@
 using UnityEngine;
 
 /// <summary>
-/// Central event-wiring hub.
-/// Also wires ZoneTrigger to MeteoriteManager for zone-specific events.
+/// Central event-wiring hub. All cross-system connections are made here in code
+/// at runtime so no manual Inspector event wiring is needed.
+///
+/// WHY onModuleRepaired DOESN'T APPEAR IN THE INSPECTOR EVENTS LIST:
+///  ShipModule.onModuleRepaired is a UnityEvent declared in the script.
+///  Unity's Inspector only shows events if the script is compiled without
+///  errors AND the target method signature matches exactly.
+///  ShipRepairManager.OnModuleRepaired(ModuleType) takes a ModuleType argument,
+///  which the Inspector's drag-drop UI cannot supply at design time.
+///
+///  SOLUTION: This GameManager wires it in code using AddListener().
+///  You do NOT need to set anything in the ShipModule event Inspector fields.
+///  GameManager.Start() connects everything automatically.
+///  Do NOT also add a manual Inspector connection — that would double-fire.
 /// </summary>
 public class GameManager : MonoBehaviour
 {
@@ -39,7 +51,12 @@ public class GameManager : MonoBehaviour
         WireModuleEvents();
         WireRepairManagerEvents();
         WireMeteoriteEvents();
+
         requirementsUI?.RefreshAll();
+
+        // Immediately refresh HUD upgrade list after all modules are wired
+        gameHUD?.RefreshUpgradeList();
+
         Debug.Log("[GameManager] All events wired.");
     }
 
@@ -81,37 +98,52 @@ public class GameManager : MonoBehaviour
     {
         if (module == null) { Warn($"ShipModule [{displayName}]"); return; }
 
+        // Wire onProgressChanged → HUD upgrade list refresh
+        // This fires immediately whenever a stage completes (from AttemptRepair)
         if (gameHUD != null)
         {
-            int captured = index;
             module.onProgressChanged.AddListener(p =>
             {
-                Debug.Log($"[GameManager] {displayName} onProgressChanged({p:F3}) -> UpdateModuleProgress({captured})");
-                gameHUD.UpdateModuleProgress(captured, p);
+                Debug.Log($"[GameManager] {displayName} progress={p:F3} — refreshing HUD");
+                gameHUD.RefreshUpgradeList();
             });
         }
         else
         {
-            Debug.LogError("[GameManager] gameHUD is null — progress bars will NOT update. " +
-                           "Drag the GameHUD into the GameManager Inspector.");
+            Debug.LogError("[GameManager] gameHUD is null. " +
+                           "Drag GameHUD into GameManager Inspector.");
         }
 
+        // Wire onProgressChanged → requirements panel refresh
         if (requirementsUI != null)
             module.onProgressChanged.AddListener(_ => requirementsUI.RefreshAll());
 
+        // ── onModuleRepaired → ShipRepairManager ─────────────────────────────
+        // THIS IS THE KEY WIRING that cannot be done from the Inspector because
+        // OnModuleRepaired(ModuleType) takes an argument that the Inspector UI
+        // cannot supply. It MUST be wired here in code with AddListener.
         if (shipRepairManager != null)
         {
             ModuleType capturedType = type;
             module.onModuleRepaired.AddListener(() =>
-                shipRepairManager.OnModuleRepaired(capturedType));
+            {
+                Debug.Log($"[GameManager] {displayName} repaired — calling ShipRepairManager.OnModuleRepaired({capturedType})");
+                shipRepairManager.OnModuleRepaired(capturedType);
+            });
+        }
+        else
+        {
+            Warn("shipRepairManager");
         }
 
+        // SFX on progress
         module.onProgressChanged.AddListener(_ => audioManager?.PlaySFX("repair_stage"));
     }
 
     private void WireRepairManagerEvents()
     {
         if (shipRepairManager == null) { Warn("shipRepairManager"); return; }
+
         if (endingManager != null)
             shipRepairManager.onAllModulesRepaired.AddListener(endingManager.TriggerEscapeEnding);
     }
@@ -123,8 +155,6 @@ public class GameManager : MonoBehaviour
         meteoriteManager.onRiftStart.AddListener(()   => audioManager?.PlayMusic("danger_zone3"));
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-
     private void Warn(string field) =>
-        Debug.LogWarning($"[GameManager] '{field}' is not assigned in Inspector.");
+        Debug.LogWarning($"[GameManager] '{field}' is not assigned in the Inspector.");
 }

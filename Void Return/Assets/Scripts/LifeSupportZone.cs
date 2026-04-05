@@ -2,24 +2,10 @@ using UnityEngine;
 
 /// <summary>
 /// Oxygen refill zone around the Life Support module.
+/// Also triggers a checkpoint save via SaveManager whenever the player enters.
 ///
-/// FIX — AUTOREFILL DISABLED AFTER REPAIR:
-///  Root cause: LifeSupportShield adds a CircleCollider2D (isTrigger = false)
-///  to the Life Support GameObject. When the player walked into the zone,
-///  the new solid shield collider physically blocked them before they could
-///  reach the trigger. OnTriggerEnter2D never fired for the zone because
-///  the player was bouncing off the shield.
-///
-///  Fix: LifeSupportZone now creates its own dedicated CHILD trigger GameObject
-///  at Start(). The trigger is completely independent of the shield collider.
-///  It always works regardless of what colliders are on the parent.
-///
-/// SETUP:
-///  1. Add LifeSupportZone to the Life Support repair point.
-///  2. Remove any existing CircleCollider2D that was being used for the zone
-///     (this script creates its own now).
-///  3. Assign the lifeSupportModule field.
-///  4. Set zoneRadius to match the visual zone size.
+/// The child trigger pattern keeps this completely isolated from the
+/// LifeSupportShield's solid collider so both always work independently.
 /// </summary>
 public class LifeSupportZone : MonoBehaviour
 {
@@ -28,11 +14,17 @@ public class LifeSupportZone : MonoBehaviour
     public ShipModule lifeSupportModule;
 
     [Header("Zone Settings")]
-    [Tooltip("Radius of the oxygen refill zone. Should be larger than the shield radius.")]
+    [Tooltip("Radius of the oxygen refill zone. Must be larger than the shield radius.")]
     public float zoneRadius = 4f;
 
-    [Tooltip("How quickly oxygen refills per second while the player is in the zone.")]
-    public float refillRate = 5f;
+    [Header("Checkpoint Save")]
+    [Tooltip("If true, triggers a checkpoint save via SaveManager each time the player enters.")]
+    public bool saveOnEnter = true;
+
+    [Tooltip("Minimum seconds between consecutive checkpoint saves. Prevents save-spam " +
+             "if the player hovers at the zone boundary.")]
+    [Range(5f, 60f)]
+    public float saveCooldown = 10f;
 
     [Header("Audio")]
     public AudioSource audioSource;
@@ -41,54 +33,58 @@ public class LifeSupportZone : MonoBehaviour
     // ─────────────────────────────────────────────────────────────────────────
     private OxygenSystem _oxygenSystem;
     private bool         _playerInZone;
-    private GameObject   _zoneTriggerObject;
+    private float        _lastSaveTime = -999f;
 
     // ─────────────────────────────────────────────────────────────────────────
 
     private void Start()
     {
-        // Create a dedicated child GameObject for the trigger.
-        // This is separate from the parent so the shield collider cannot interfere.
-        _zoneTriggerObject = new GameObject("LifeSupportZoneTrigger");
-        _zoneTriggerObject.transform.SetParent(transform, false);
-        _zoneTriggerObject.transform.localPosition = Vector3.zero;
-        _zoneTriggerObject.layer = gameObject.layer;
+        // Create dedicated child trigger — isolated from the shield's solid collider
+        var child = new GameObject("LifeSupportZoneTrigger");
+        child.transform.SetParent(transform, false);
+        child.transform.localPosition = Vector3.zero;
+        child.layer = gameObject.layer;
 
-        // Add Rigidbody2D (kinematic) so the trigger fires correctly
-        var rb       = _zoneTriggerObject.AddComponent<Rigidbody2D>();
-        rb.bodyType  = RigidbodyType2D.Kinematic;
+        var rb      = child.AddComponent<Rigidbody2D>();
+        rb.bodyType = RigidbodyType2D.Kinematic;
 
-        // Add the trigger collider
-        var col       = _zoneTriggerObject.AddComponent<CircleCollider2D>();
+        var col       = child.AddComponent<CircleCollider2D>();
         col.isTrigger = true;
         col.radius    = zoneRadius;
 
-        // Add a relay script so events route back to this component
-        var relay     = _zoneTriggerObject.AddComponent<LifeSupportZoneTriggerRelay>();
+        var relay     = child.AddComponent<LifeSupportZoneTriggerRelay>();
         relay.parent  = this;
 
-        Debug.Log($"[LifeSupportZone] Zone trigger created at {transform.position}, radius={zoneRadius}");
+        Debug.Log($"[LifeSupportZone] Zone trigger created, radius={zoneRadius}");
     }
 
     private void Update()
     {
         if (!_playerInZone || _oxygenSystem == null) return;
         if (!CanRefill()) return;
-
         _oxygenSystem.RefillAtLifeSupport();
     }
 
-    // Called by the relay component on the child trigger object
+    // ─────────────────────────────────────────────────────────────────────────
+    // Called by LifeSupportZoneTriggerRelay
+    // ─────────────────────────────────────────────────────────────────────────
+
     public void OnPlayerEnter(Collider2D other)
     {
         _playerInZone  = true;
         _oxygenSystem  = other.GetComponent<OxygenSystem>();
-        Debug.Log("[LifeSupportZone] Player entered zone.");
 
         if (CanRefill())
             NotificationManager.Instance?.ShowInfo("Life Support zone — oxygen refilling.");
         else
-            NotificationManager.Instance?.ShowInfo("Life Support — repair Stage 1 to enable oxygen refill.");
+            NotificationManager.Instance?.ShowInfo("Repair Life Support Stage 1 to enable oxygen refill.");
+
+        // Trigger checkpoint save
+        if (saveOnEnter && Time.time - _lastSaveTime >= saveCooldown)
+        {
+            _lastSaveTime = Time.time;
+            SaveManager.Instance?.LifeSupportCheckpointSave();
+        }
     }
 
     public void OnPlayerExit(Collider2D other)
@@ -99,15 +95,12 @@ public class LifeSupportZone : MonoBehaviour
 
     private bool CanRefill()
     {
-        if (lifeSupportModule == null) return true; // default: always refill if no module assigned
+        if (lifeSupportModule == null) return true;
         return lifeSupportModule.Progress > 0f || lifeSupportModule.IsFullyRepaired;
     }
 }
 
-/// <summary>
-/// Relay that passes trigger events from the child trigger GameObject to LifeSupportZone.
-/// This pattern isolates the zone trigger from any other colliders on the parent object.
-/// </summary>
+/// <summary>Relay that routes trigger events from the child GameObject to LifeSupportZone.</summary>
 public class LifeSupportZoneTriggerRelay : MonoBehaviour
 {
     [HideInInspector] public LifeSupportZone parent;
