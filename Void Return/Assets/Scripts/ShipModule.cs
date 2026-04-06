@@ -21,8 +21,10 @@ public class RepairStage
 }
 
 /// <summary>
-/// Manages repair state. Calls ShipRepairManager.OnStageCompleted()
-/// after each individual stage so per-stage upgrades apply immediately.
+/// Manages repair state for one ship module.
+/// Calls ShipRepairManager.OnStageCompleted() after each stage.
+/// Calls ShipRepairManager.OnModuleRepaired() and fires onModuleRepaired after final stage.
+/// Also directly refreshes UI panels immediately after repair (no event chain delay).
 /// </summary>
 public class ShipModule : MonoBehaviour
 {
@@ -43,7 +45,7 @@ public class ShipModule : MonoBehaviour
     public AudioClip   repairClip;
     public AudioClip   completionClip;
 
-    [Header("Events")]
+    [Header("Events — leave empty, wired by GameManager in code")]
     public UnityEvent        onModuleRepaired;
     public UnityEvent<float> onProgressChanged;
 
@@ -61,7 +63,9 @@ public class ShipModule : MonoBehaviour
         get
         {
             float t = 0f;
-            if (stages != null) foreach (var s in stages) if (s.isComplete) t += s.completionFraction;
+            if (stages != null)
+                foreach (var s in stages)
+                    if (s.isComplete) t += s.completionFraction;
             return Mathf.Clamp01(t);
         }
     }
@@ -71,16 +75,16 @@ public class ShipModule : MonoBehaviour
     private void Start()
     {
         ValidateStages();
-        onProgressChanged?.Invoke(Progress);
-        Invoke(nameof(LogListenerStatus), 1f);
+        FireProgressAndRefreshUI();
+        Invoke(nameof(DiagnosticFire), 1f);
         if (Inventory.Instance != null)
             Inventory.Instance.OnInventoryChanged += CheckAndNotifyReady;
     }
 
-    private void LogListenerStatus()
+    private void DiagnosticFire()
     {
-        Debug.Log($"[ShipModule:{moduleName}] Diagnostic fire — progress={Progress:F3}");
-        onProgressChanged?.Invoke(Progress);
+        Debug.Log($"[ShipModule:{moduleName}] Diagnostic — progress={Progress:F3}");
+        FireProgressAndRefreshUI();
     }
 
     private void OnDestroy()
@@ -92,10 +96,18 @@ public class ShipModule : MonoBehaviour
     private void ValidateStages()
     {
         if (stages == null || stages.Count == 0)
-        { Debug.LogError($"[ShipModule:{moduleName}] STAGES LIST IS EMPTY. Add stages in Inspector."); return; }
-        float total = 0f; foreach (var s in stages) total += s.completionFraction;
+        { Debug.LogError($"[ShipModule:{moduleName}] No stages. Add stages in Inspector."); return; }
+        float total = 0f;
+        foreach (var s in stages) total += s.completionFraction;
         if (Mathf.Abs(total - 1f) > 0.05f)
-            Debug.LogWarning($"[ShipModule:{moduleName}] Fractions sum to {total:F2} (should be 1.0).");
+            Debug.LogWarning($"[ShipModule:{moduleName}] Stage fractions sum to {total:F2}, should be 1.0.");
+    }
+
+    private void FireProgressAndRefreshUI()
+    {
+        onProgressChanged?.Invoke(Progress);
+        FindFirstObjectByType<GameHUD>()?.RefreshUpgradeList();
+        FindFirstObjectByType<MaterialRequirementsUI>()?.RefreshAll();
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -112,22 +124,21 @@ public class ShipModule : MonoBehaviour
 
     public void AttemptRepair()
     {
-        Debug.Log($"[ShipModule:{moduleName}] AttemptRepair — stage={_currentStageIndex}/{stages?.Count ?? 0}");
+        Debug.Log($"[ShipModule:{moduleName}] AttemptRepair stage={_currentStageIndex}/{stages?.Count ?? 0}");
 
-        if (_isFullyRepaired) { NotificationManager.Instance?.ShowInfo($"{moduleName} is fully repaired."); return; }
+        if (_isFullyRepaired)
+        { NotificationManager.Instance?.ShowInfo($"{moduleName} is fully repaired."); return; }
         if (stages == null || stages.Count == 0)
         { Debug.LogError($"[ShipModule:{moduleName}] No stages configured."); return; }
-        if (Inventory.Instance == null) { Debug.LogError("[ShipModule] Inventory null."); return; }
+        if (Inventory.Instance == null)
+        { Debug.LogError("[ShipModule] Inventory is null."); return; }
         if (!CanRepairCurrentStage())
-        {
-            NotificationManager.Instance?.ShowInfo(
-                $"{moduleName} — Stage {_currentStageIndex + 1}\nStill need:\n{BuildMissingText()}");
-            return;
-        }
+        { NotificationManager.Instance?.ShowInfo($"{moduleName} — Stage {_currentStageIndex + 1}\nStill need:\n{BuildMissingText()}"); return; }
 
+        // Consume materials
         foreach (var req in stages[_currentStageIndex].requirements)
             if (!Inventory.Instance.ConsumeMaterials(req.materialType, req.required))
-            { Debug.LogError($"[ShipModule:{moduleName}] Consume failed."); return; }
+            { Debug.LogError($"[ShipModule:{moduleName}] ConsumeMaterials failed for {req.materialType}."); return; }
 
         stages[_currentStageIndex].isComplete = true;
         _currentStageIndex++;
@@ -136,28 +147,48 @@ public class ShipModule : MonoBehaviour
         repairParticles?.Play();
         audioSource?.PlayOneShot(repairClip);
 
-        float prog = Progress;
-        onProgressChanged?.Invoke(prog);
-        Debug.Log($"[ShipModule:{moduleName}] Stage {_currentStageIndex} done — progress={prog:P0}");
+        Debug.Log($"[ShipModule:{moduleName}] Stage {_currentStageIndex} complete. Progress={Progress:P0}");
 
-        // Apply per-stage upgrades through ShipRepairManager
+        // Per-stage upgrades (gadget unlock, oxygen boost etc)
         ShipRepairManager.Instance?.OnStageCompleted(moduleType, _currentStageIndex);
+
+        // Immediate UI refresh
+        FireProgressAndRefreshUI();
 
         if (_currentStageIndex >= stages.Count)
         {
+            // Module fully repaired
             _isFullyRepaired = true;
             completionParticles?.Play();
             audioSource?.PlayOneShot(completionClip);
+            NotificationManager.Instance?.ShowInfo($"{moduleName.ToUpper()} FULLY REPAIRED!");
+
+            // Fire event (GameManager listener calls ShipRepairManager.OnModuleRepaired)
             onModuleRepaired?.Invoke();
+
+            // Also call directly on ShipRepairManager — belt-and-suspenders
+            // in case GameManager wiring is missing or hasn't run yet
             ShipRepairManager.Instance?.OnModuleRepaired(moduleType);
+
+            FireProgressAndRefreshUI();
+        }
+        else
+        {
+            NotificationManager.Instance?.ShowInfo(
+                $"{moduleName} — Stage {_currentStageIndex} complete!\nNext: {stages[_currentStageIndex].stageName}");
         }
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+
     public string GetProximityPrompt()
     {
-        if (stages == null || stages.Count == 0) return $"{moduleName}\n[!] No stages — check Inspector.";
-        if (_isFullyRepaired) return $"{moduleName} — [DONE] Fully repaired";
-        if (CanRepairCurrentStage()) return $"{moduleName} — Stage {_currentStageIndex + 1}\nPress [E] to repair  [READY]";
+        if (stages == null || stages.Count == 0)
+            return $"{moduleName}\n[!] No stages — check Inspector.";
+        if (_isFullyRepaired)
+            return $"{moduleName} — [DONE] Fully repaired";
+        if (CanRepairCurrentStage())
+            return $"{moduleName} — Stage {_currentStageIndex + 1}\nPress [E] to repair  [READY]";
         return $"{moduleName} — Stage {_currentStageIndex + 1}\nPress [E] to check materials";
     }
 
@@ -167,7 +198,7 @@ public class ShipModule : MonoBehaviour
         {
             var tp = FindFirstObjectByType<ThrusterPack>();
             if (tp != null && tp.FuelNormalized < 1f)
-                NotificationManager.Instance?.ShowInfo($"Engine Core: [E] refuel ({tp.FuelNormalized*100f:F0}%) or repair.");
+                NotificationManager.Instance?.ShowInfo($"Engine Core: [E] refuel ({tp.FuelNormalized * 100f:F0}%) or repair.");
         }
     }
 
@@ -194,8 +225,9 @@ public class ShipModule : MonoBehaviour
         foreach (var req in stages[_currentStageIndex].requirements)
         {
             int have = Inventory.Instance?.GetCount(req.materialType) ?? 0;
-            string name = System.Text.RegularExpressions.Regex.Replace(req.materialType.ToString(), "(?<=[a-z])(?=[A-Z])", " ");
-            sb.AppendLine($"  {name}: {(have >= req.required ? "[OK]" : $"{have}/{req.required}")}");
+            string n = System.Text.RegularExpressions.Regex.Replace(
+                req.materialType.ToString(), "(?<=[a-z])(?=[A-Z])", " ");
+            sb.AppendLine($"  {n}: {(have >= req.required ? "[OK]" : $"{have}/{req.required}")}");
         }
         return sb.ToString();
     }
@@ -203,8 +235,10 @@ public class ShipModule : MonoBehaviour
     public void LoadStageIndex(int idx)
     {
         _currentStageIndex = Mathf.Clamp(idx, 0, stages?.Count ?? 0);
-        if (stages != null) for (int i = 0; i < _currentStageIndex && i < stages.Count; i++) stages[i].isComplete = true;
+        if (stages != null)
+            for (int i = 0; i < _currentStageIndex && i < stages.Count; i++)
+                stages[i].isComplete = true;
         _isFullyRepaired = stages != null && _currentStageIndex >= stages.Count;
-        onProgressChanged?.Invoke(Progress);
+        FireProgressAndRefreshUI();
     }
 }

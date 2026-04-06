@@ -9,31 +9,25 @@ public class GameSaveData
     public int    hullPlatingStageIndex;
     public int    navigationStageIndex;
     public int    engineCoreStageIndex;
-    public bool   tetherUnlocked;
-    public bool   grenadeUnlocked;
-    public bool   thrusterUnlocked;
-
-    // Checkpoint position — where the player was when they last saved at Life Support.
-    // On "Retry from save" the player respawns here rather than at world origin.
     public float  checkpointX;
     public float  checkpointY;
     public bool   hasCheckpoint;
+    // NOTE: tetherUnlocked, grenadeUnlocked, thrusterUnlocked are intentionally
+    // removed. Gadget active state is now derived from module stage on Load()
+    // via ShipRepairManager.ReapplyUnlocksFromModuleState(). This prevents the
+    // common bug where a save made before a gadget was unlocked would re-disable
+    // the gadget on Retry From Save.
 }
 
 /// <summary>
 /// Saves and loads game state.
 ///
-/// ADDITIONS:
-///  1. LifeSupportCheckpointSave() — called by LifeSupportZone when the player
-///     enters the Life Support zone. This is a quiet auto-save that also records
-///     the player's world position as a checkpoint.
-///
-///  2. Load() restores the player to the checkpoint position (if one exists)
-///     so "Retry from save" always returns the player to the Life Support module.
-///
-///  3. Both the timed auto-save (every 5 min) and the checkpoint save write to
-///     the same PlayerPrefs key. The checkpoint save always overwrites — the
-///     most recent save is always loaded on retry.
+/// GADGET RESTORE FIX:
+///  Load() no longer saves/restores gadget SetActive state directly.
+///  Instead, after restoring module stages, it calls
+///  ShipRepairManager.ReapplyUnlocksFromModuleState() which activates
+///  gadgets based on which module stages are complete.
+///  This is correct regardless of what was active when the save was made.
 /// </summary>
 public class SaveManager : MonoBehaviour
 {
@@ -42,7 +36,6 @@ public class SaveManager : MonoBehaviour
     private const string SAVE_KEY = "VoidReturn_Save";
 
     [Header("Auto-Save")]
-    [Tooltip("Timed auto-save interval in minutes. Set to 0 to disable.")]
     [Range(0f, 30f)]
     public float autoSaveIntervalMinutes = 5f;
 
@@ -56,15 +49,8 @@ public class SaveManager : MonoBehaviour
     public OxygenSystem oxygenSystem;
     public Transform    playerTransform;
 
-    [Header("Gadget References")]
-    public TetherGun              tetherGun;
-    public GravityGrenadeLauncher grenadeGun;
-    public ThrusterPack           thrusterPack;
-
     // ─────────────────────────────────────────────────────────────────────────
     private float _autoSaveTimer;
-
-    // ─────────────────────────────────────────────────────────────────────────
 
     private void Awake()
     {
@@ -76,7 +62,6 @@ public class SaveManager : MonoBehaviour
     {
         _autoSaveTimer = autoSaveIntervalMinutes * 60f;
 
-        // Auto-find player transform if not assigned
         if (playerTransform == null)
         {
             var pc = FindFirstObjectByType<PlayerController>();
@@ -102,33 +87,21 @@ public class SaveManager : MonoBehaviour
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Public API
-    // ─────────────────────────────────────────────────────────────────────────
 
     public static bool SaveFileExists() => PlayerPrefs.HasKey(SAVE_KEY);
 
-    /// <summary>
-    /// Manual save triggered by the pause menu Save button.
-    /// Records current position as checkpoint.
-    /// </summary>
+    /// <summary>Manual save from pause menu.</summary>
     public void Save()
     {
-        string json = BuildSaveJson(recordCheckpoint: true);
-        Write(json);
+        Write(BuildSaveJson(recordPosition: true));
         NotificationManager.Instance?.ShowInfo("Game saved.");
-        Debug.Log($"[SaveManager] Manual save.");
+        Debug.Log("[SaveManager] Manual save.");
     }
 
-    /// <summary>
-    /// Called by LifeSupportZone when the player enters the Life Support area.
-    /// Quietly saves progress and records the Life Support position as the checkpoint.
-    /// This is the save that "Retry from save" loads on death.
-    /// </summary>
+    /// <summary>Called by LifeSupportZone — saves and records Life Support position as checkpoint.</summary>
     public void LifeSupportCheckpointSave()
     {
-        string json = BuildSaveJson(recordCheckpoint: true);
-        Write(json);
-        // Very small notification so it doesn't interrupt gameplay
+        Write(BuildSaveJson(recordPosition: true));
         NotificationManager.Instance?.ShowPickup("Checkpoint saved at Life Support.");
         Debug.Log("[SaveManager] Life Support checkpoint save.");
     }
@@ -138,7 +111,6 @@ public class SaveManager : MonoBehaviour
         string json = PlayerPrefs.GetString(SAVE_KEY, "");
         if (string.IsNullOrEmpty(json))
         {
-            Debug.Log("[SaveManager] No save data found.");
             NotificationManager.Instance?.ShowInfo("No save data found.");
             return;
         }
@@ -152,22 +124,19 @@ public class SaveManager : MonoBehaviour
             navigation?.LoadStageIndex(data.navigationStageIndex);
             engineCore?.LoadStageIndex(data.engineCoreStageIndex);
 
-            // Restore gadgets
-            if (tetherGun    != null) tetherGun.gameObject.SetActive(data.tetherUnlocked);
-            if (grenadeGun   != null) grenadeGun.gameObject.SetActive(data.grenadeUnlocked);
-            if (thrusterPack != null) thrusterPack.gameObject.SetActive(data.thrusterUnlocked);
-
-            // Restore player to checkpoint position (Life Support location)
+            // Restore player position to checkpoint
             if (data.hasCheckpoint && playerTransform != null)
-            {
                 playerTransform.position = new Vector3(data.checkpointX, data.checkpointY, 0f);
-                Debug.Log($"[SaveManager] Restored player to checkpoint ({data.checkpointX:F1}, {data.checkpointY:F1})");
-            }
 
-            // Always restore full oxygen on load
+            // Always restore full oxygen
             oxygenSystem?.RestoreFullOxygen();
 
-            NotificationManager.Instance?.ShowInfo("Checkpoint loaded. Oxygen fully restored.");
+            // Re-apply gadget unlocks from module state — NOT from saved booleans.
+            // This is the correct way: if Navigation Stage 1 is loaded, tether is active.
+            // Using saved booleans was broken: if saved before unlock, retry re-disabled them.
+            ShipRepairManager.Instance?.ReapplyUnlocksFromModuleState();
+
+            NotificationManager.Instance?.ShowInfo("Checkpoint loaded. Oxygen restored.");
             Debug.Log("[SaveManager] Load complete.");
         }
         catch (Exception ex)
@@ -178,76 +147,44 @@ public class SaveManager : MonoBehaviour
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Private helpers
-    // ─────────────────────────────────────────────────────────────────────────
 
     private void TimedAutoSave()
     {
-        // Timed auto-save preserves existing checkpoint position
+        // Preserve existing checkpoint on timed auto-save
+        float cpX = playerTransform?.position.x ?? 0f;
+        float cpY = playerTransform?.position.y ?? 0f;
+        bool  hasCp = true;
         string existing = PlayerPrefs.GetString(SAVE_KEY, "");
-        bool hasExistingCheckpoint = false;
-        float cpX = 0f, cpY = 0f;
-
         if (!string.IsNullOrEmpty(existing))
         {
-            try
-            {
-                var prev = JsonUtility.FromJson<GameSaveData>(existing);
-                hasExistingCheckpoint = prev.hasCheckpoint;
-                cpX = prev.checkpointX;
-                cpY = prev.checkpointY;
-            }
+            try { var prev = JsonUtility.FromJson<GameSaveData>(existing); if (prev.hasCheckpoint) { cpX = prev.checkpointX; cpY = prev.checkpointY; } }
             catch { }
         }
-
-        string json = BuildSaveJson(
-            recordCheckpoint: playerTransform != null,
-            overrideCheckpointX: hasExistingCheckpoint ? cpX : (playerTransform?.position.x ?? 0f),
-            overrideCheckpointY: hasExistingCheckpoint ? cpY : (playerTransform?.position.y ?? 0f),
-            overrideHasCheckpoint: hasExistingCheckpoint || playerTransform != null);
-
-        Write(json);
+        var data = BuildDataWithCheckpoint(cpX, cpY, hasCp);
+        Write(JsonUtility.ToJson(data));
         NotificationManager.Instance?.ShowPickup("Auto-saved.");
-        Debug.Log("[SaveManager] Timed auto-save.");
     }
 
-    private string BuildSaveJson(bool recordCheckpoint,
-                                  float overrideCheckpointX = 0f,
-                                  float overrideCheckpointY = 0f,
-                                  bool overrideHasCheckpoint = false)
+    private string BuildSaveJson(bool recordPosition)
     {
-        float cpX = 0f, cpY = 0f;
-        bool  hasCp = false;
+        float cpX = 0f; float cpY = 0f; bool hasCp = false;
+        if (recordPosition && playerTransform != null)
+        { cpX = playerTransform.position.x; cpY = playerTransform.position.y; hasCp = true; }
+        return JsonUtility.ToJson(BuildDataWithCheckpoint(cpX, cpY, hasCp));
+    }
 
-        if (recordCheckpoint && playerTransform != null)
-        {
-            cpX  = playerTransform.position.x;
-            cpY  = playerTransform.position.y;
-            hasCp = true;
-        }
-        else if (overrideHasCheckpoint)
-        {
-            cpX   = overrideCheckpointX;
-            cpY   = overrideCheckpointY;
-            hasCp = overrideHasCheckpoint;
-        }
-
-        var data = new GameSaveData
+    private GameSaveData BuildDataWithCheckpoint(float cpX, float cpY, bool hasCp) =>
+        new GameSaveData
         {
             oxygenNormalized      = oxygenSystem?.OxygenNormalized ?? 1f,
             lifeSupportStageIndex = lifeSupport?.CurrentStageIndex ?? 0,
             hullPlatingStageIndex = hullPlating?.CurrentStageIndex ?? 0,
             navigationStageIndex  = navigation?.CurrentStageIndex  ?? 0,
             engineCoreStageIndex  = engineCore?.CurrentStageIndex  ?? 0,
-            tetherUnlocked        = tetherGun?.gameObject.activeSelf    ?? false,
-            grenadeUnlocked       = grenadeGun?.gameObject.activeSelf   ?? false,
-            thrusterUnlocked      = thrusterPack?.gameObject.activeSelf ?? false,
             checkpointX           = cpX,
             checkpointY           = cpY,
             hasCheckpoint         = hasCp,
         };
-        return JsonUtility.ToJson(data);
-    }
 
     private void Write(string json)
     {
